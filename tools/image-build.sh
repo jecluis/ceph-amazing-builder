@@ -1,5 +1,6 @@
 #!/bin/bash
 
+imgdir=$(realpath ./images)
 
 usage() {
 
@@ -57,7 +58,7 @@ _check_run_img_exists() {
 
 _build_base_img() {
   echo "build base image"
-  podman build -t cacb/base:leap-15.2 -f Dockerfile.base . || return 1
+  podman build -t cacb/base:leap-15.2 -f $imgdir/Dockerfile.base . || return 1
 }
 
 
@@ -65,7 +66,7 @@ _build_base_build_img() {
   echo "build base build image for repo $1 release $2"
   podman build -t cacb/build/$1:$2 \
     --build-arg CEPH_RELEASE=$2 --build-arg CEPH_REPO=$1 \
-    -f Dockerfile.base.build .
+    -f $imgdir/Dockerfile.base.build .
 }
 
 
@@ -73,7 +74,7 @@ _build_run_img() {
   echo "build run image for repo $1 release $2"
   podman build -t cacb/run/$1:$2 \
     --build-arg CEPH_RELEASE=$2 --build-arg CEPH_REPO=$1 \
-    -f Dockerfile.run .
+    -f $imgdir/Dockerfile.run .
 }
 
 
