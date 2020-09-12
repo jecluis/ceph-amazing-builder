@@ -1,0 +1,22 @@
+# vim: ft=dockerfile
+FROM cacb/base:leap-15.2
+
+ARG CEPH_RELEASE="master"
+ARG CEPH_REPO="ceph"
+
+LABEL maintainer="Joao Eduardo Luis <joao@suse.com>" \
+      cacb.ceph-release=$CEPH_RELEASE
+
+RUN echo "leap 15.2 - ceph amazing containerized builder - $CEPH_RELEASE"
+
+RUN mkdir /build/tmp
+WORKDIR /build/tmp
+
+RUN (echo "grab install-deps.sh from github" && \
+     wget https://github.com/$CEPH_REPO/ceph/raw/$CEPH_RELEASE/install-deps.sh)
+RUN (echo "grab ceph.spec.in from github" && \
+     wget https://github.com/$CEPH_REPO/ceph/raw/$CEPH_RELEASE/ceph.spec.in)
+RUN /bin/bash ./install-deps.sh
+
+WORKDIR /build
+RUN rm -fr /build/tmp

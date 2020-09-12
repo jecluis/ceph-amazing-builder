@@ -1,0 +1,19 @@
+# vim: ft=dockerfile
+FROM opensuse/leap:15.2
+
+RUN echo "opensuse leap 15.2 builder image"
+RUN zypper --gpg-auto-import-keys refresh
+RUN zypper -n install git sudo wget ccache
+
+RUN mkdir /build
+RUN useradd -d /build -c 'ceph builder' builder
+RUN chown builder:users /build
+RUN echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+USER builder:users
+
+RUN mkdir /build/src
+RUN mkdir /build/ccache
+RUN mkdir /build/bin
+
+VOLUME ["/build/src", "/build/ccache", "/build/bin"]

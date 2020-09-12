@@ -1,0 +1,7 @@
+# vim: ft=dockerfile
+ARG CEPH_REPO="ceph"
+ARG CEPH_RELEASE="master"
+FROM cacb/build/$CEPH_REPO:$CEPH_RELEASE
+LABEL maintainers="Joao Eduardo Luis <joao@suse.com>"
+
+ENTRYPOINT ["/build/bin/entrypoint.sh"]
