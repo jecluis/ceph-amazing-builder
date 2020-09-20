@@ -33,7 +33,7 @@ _check_base_img_exists() {
 
   # we are lazy; we always assume the base img is leap-15.2
   if ! podman images --format "{{.Repository}}:{{.Tag}}" | \
-       grep -q cacb/base:leap-15.2 ; then
+       grep -q cab/base:leap-15.2 ; then
     return 1
   fi
   return 0
@@ -42,7 +42,7 @@ _check_base_img_exists() {
 _check_build_img_exists() {
 
   if ! podman images --format "{{.Repository}}:{{.Tag}}" | \
-       grep -q cacb/build/$1:$2 ; then
+       grep -q cab/build/$1:$2 ; then
     return 1
   fi
   return 0
@@ -50,7 +50,7 @@ _check_build_img_exists() {
 
 _check_run_img_exists() {
   if ! podman images --format "{{.Repository}}:{{.Tag}}" | \
-       grep -q cacb/run/$1:$2 ; then
+       grep -q cab/run/$1:$2 ; then
     return 1
   fi
   return 0
@@ -58,13 +58,13 @@ _check_run_img_exists() {
 
 _build_base_img() {
   echo "build base image"
-  podman build -t cacb/base:leap-15.2 -f $imgdir/Dockerfile.base . || return 1
+  podman build -t cab/base:leap-15.2 -f $imgdir/Dockerfile.base . || return 1
 }
 
 
 _build_base_build_img() {
   echo "build base build image for repo $1 release $2"
-  podman build -t cacb/build/$1:$2 \
+  podman build -t cab/build/$1:$2 \
     --build-arg CEPH_RELEASE=$2 --build-arg CEPH_REPO=$1 \
     -f $imgdir/Dockerfile.base.build .
 }
@@ -72,7 +72,7 @@ _build_base_build_img() {
 
 _build_run_img() {
   echo "build run image for repo $1 release $2"
-  podman build -t cacb/run/$1:$2 \
+  podman build -t cab/run/$1:$2 \
     --build-arg CEPH_RELEASE=$2 --build-arg CEPH_REPO=$1 \
     -f $imgdir/Dockerfile.run .
 }

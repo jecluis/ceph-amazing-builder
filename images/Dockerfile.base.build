@@ -1,13 +1,13 @@
 # vim: ft=dockerfile
-FROM cacb/base:leap-15.2
+FROM cab/base:leap-15.2
 
 ARG CEPH_RELEASE="master"
 ARG CEPH_REPO="ceph"
 
 LABEL maintainer="Joao Eduardo Luis <joao@suse.com>" \
-      cacb.ceph-release=$CEPH_RELEASE
+      cab.ceph-release=${CEPH_RELEASE}
 
-RUN echo "leap 15.2 - ceph amazing containerized builder - $CEPH_RELEASE"
+RUN echo "leap 15.2 - ceph amazing builder - ${CEPH_RELEASE}"
 
 RUN mkdir /build/tmp
 WORKDIR /build/tmp
