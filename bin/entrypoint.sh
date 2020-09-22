@@ -62,7 +62,7 @@ rpmbuild -bi \
   --nodeps --noprep --noclean --nocheck --noclean \
   --buildroot=/build/out \
   --verbose --build-in-place --short-circuit\
-  ceph.spec.builder
+  ceph.spec.builder || exit 1
 
 
 if [[ -e "/build/bin/parse-spec.sh" ]]; then
