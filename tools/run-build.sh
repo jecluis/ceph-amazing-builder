@@ -28,7 +28,7 @@ _check_img_exists() {
   release="$2"
 
   if ! podman images --format "{{.Repository}}:{{.Tag}}" | \
-      grep -q cab/run/${vendor}:${release} ; then
+      grep -q cab/build/${vendor}:${release} ; then
     return 1
   fi
   return 0
@@ -114,7 +114,7 @@ EOF
     -v ${src}:/build/src \
     -v ${out}:/build/out \
     ${volume_extra_args} \
-    cab/run/${vendor}:${release} \
+    cab/build/${vendor}:${release} \
     ${run_extra_args} || exit 1
 }
 

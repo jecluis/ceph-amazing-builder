@@ -1,0 +1,6 @@
+# vim: ft=dockerfile
+FROM opensuse/leap:15.2
+LABEL maintainer="Joao Eduardo Luis <joao@suse.com>"
+
+RUN zypper --gpg-auto-import-keys refresh
+RUN zypper -n install git sudo wget ccache

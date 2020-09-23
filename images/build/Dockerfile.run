@@ -1,9 +1,7 @@
 # vim: ft=dockerfile
-ARG CEPH_REPO="ceph"
+ARG CEPH_VENDOR="ceph"
 ARG CEPH_RELEASE="master"
-FROM cab/build/$CEPH_REPO:$CEPH_RELEASE
+FROM cab/build/$CEPH_VENDOR:$CEPH_RELEASE
 LABEL maintainers="Joao Eduardo Luis <joao@suse.com>"
 
-RUN mkdir /build/out
-VOLUME ["/build/out"]
 ENTRYPOINT ["/build/bin/entrypoint.sh"]

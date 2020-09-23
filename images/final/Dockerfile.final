@@ -1,0 +1,4 @@
+ARG CEPH_VENDOR="suse"
+ARG CEPH_RELEASE="ses7"
+
+FROM cab/build/${CEPH_VENDOR}:${CEPH_RELEASE}

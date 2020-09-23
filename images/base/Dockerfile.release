@@ -1,0 +1,19 @@
+FROM cab/base/suse:leap-15.2
+
+ARG CEPH_RELEASE="ses7"
+ARG CEPH_VENDOR="suse"
+
+LABEL maintainer="Joao Eduardo Luis <joao@suse.com>" \
+      cab.ceph-release=${CEPH_RELEASE}
+
+RUN mkdir -p /tmp/build
+WORKDIR /tmp/build
+
+RUN (echo "grab install-deps.sh from github" && \
+     wget https://github.com/$CEPH_VENDOR/ceph/raw/$CEPH_RELEASE/install-deps.sh)
+RUN (echo "grab ceph.spec.in from github" && \
+     wget https://github.com/$CEPH_VENDOR/ceph/raw/$CEPH_RELEASE/ceph.spec.in)
+RUN /bin/bash ./install-deps.sh
+
+WORKDIR /
+RUN rm -fr /tmp/build

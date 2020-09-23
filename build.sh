@@ -57,6 +57,18 @@ srcdir="$3"
 do_container=false
 [[ -n "$4" && "$4" == "--do-container" ]] && do_container=true
 
+final_base_img=""
+if $do_container ; then
+  final_base_img="cab/base/release/${vendor}:${release}"
+  if ! podman images --format "{{.Repository}}:{{.Tag}}" | \
+       grep -n ${final_base_img} ; then
+    echo "unable to find base image for final build container"
+    echo "you must run 'image-build.sh' first."
+    exit 1
+  fi
+fi
+
+
 [[ -z "${vendor}" ]] && usage && exit 1
 [[ -z "${release}" ]] && usage && exit 1
 [[ -z "${srcdir}" ]] && usage && exit 1
@@ -89,12 +101,12 @@ $mydir/tools/run-build.sh build \
 
 if $do_container; then
 
-  final_base_img="cab/final/${vendor}:${release}"
-  build_final_base_image ${vendor} ${release}
+  # final_base_img="cab/final/${vendor}:${release}"
+  # build_final_base_image ${vendor} ${release}
+  # 
+  # [[ -z "${final_base_img}" ]] && \
+  #   echo "error getting final base image" && exit 1
 
-  [[ -z "${final_base_img}" ]] && \
-    echo "error getting final base image" && exit 1
-  
   ctr_build_time=$(date --utc +"%Y%m%dT%H%M%SZ")
 
   container=$(buildah from ${final_base_img})
