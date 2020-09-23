@@ -6,29 +6,6 @@ usage() {
   echo "usage: $0 <vendor> <release> <src> [--do-container]"
 }
 
-build_final_base_image() {
-
-  vendor="${1}"
-  release="${2}"
-
-  container_final_img="cab/final/${vendor}:${release}"
-
-  if podman images --format "{{.Repository}}:{{.Tag}}" | \
-        grep -q ${container_final_img} ; then
-    return
-  fi
-
-  final_container=$(buildah from opensuse/leap:15.2)
-
-  # unfortunately, this is the easiest way to install all the dependencies...
-  buildah run ${final_container} zypper install -y ceph ceph-base
-  # and clean up ceph install so we can do our thing later.
-  buildah run ${final_container} zypper remove -y --no-clean-deps \
-    ceph ceph-base
-
-  buildah commit ${final_container} ${container_final_img}
-}
-
 if [[ ! -e "${config}" ]]; then
   echo "missing config file"
   exit 1
@@ -100,12 +77,6 @@ $mydir/tools/run-build.sh build \
   ${vendor} ${release} ${srcdir} ${outdir} ${ccache_dir} || exit 1
 
 if $do_container; then
-
-  # final_base_img="cab/final/${vendor}:${release}"
-  # build_final_base_image ${vendor} ${release}
-  # 
-  # [[ -z "${final_base_img}" ]] && \
-  #   echo "error getting final base image" && exit 1
 
   ctr_build_time=$(date --utc +"%Y%m%dT%H%M%SZ")
 
