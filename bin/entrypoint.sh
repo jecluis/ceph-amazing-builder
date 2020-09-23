@@ -38,7 +38,8 @@ cat ceph.spec.in |
   sed "s/mkdir build/mkdir build || true/g" |
   sed "s/%fdupes %{buildroot}%{_prefix}//g" |
   sed 's/%build/%build\necho "===> BUILD <==="/g' |
-  sed 's/%install/%install\necho "==> INSTALL <=="/g' > ceph.spec.builder || exit 1
+  sed 's/%install/%install\necho "==> INSTALL <=="/g' > ceph.spec.builder || \
+      exit 1
 
 # sed -e 's/mkdir build/mkdir build || true/g' < ceph.spec.in >
 # ceph.spec.builder || exit 1
@@ -46,36 +47,23 @@ git submodule sync || exit 1
 git submodule update --init --recursive || exit 1
 
 
-# this is needed because if we're installing into something that is not,
-# literally, an empty mock root directory (e.g., but into a container mount),
-# then we may have a symlink from /var/run to /run, which would end up being
-# this container's /run instead of the target's /run. Thus we need to be
-# creative.
-outdir_moved_run=false
-if [[ -L "/build/out/var/run" ]]; then
-  mv /build/out/var/run /build/out/var/run.tmp
-  ln -fs /build/out/run /build/out/var/run
-  outdir_moved_run=true
-fi
+# note: we got to run this against a 'build' (or whatever) directory inside our
+# build output directory because rpmbuild's build stage **really** wants to
+# remove that directory first. We believe there is a way to force it not to, by
+# editting macros, but we're definitely not going there now. Too hackish.
 
 rpmbuild -bi \
-  --nodeps --noprep --noclean --nocheck --noclean \
-  --buildroot=/build/out \
-  --verbose --build-in-place --short-circuit\
+  --nodeps --noprep --noclean --nocheck \
+  --buildroot=/build/out/build \
+  --verbose --build-in-place \
   ceph.spec.builder || exit 1
 
 
 if [[ -e "/build/bin/parse-spec.sh" ]]; then
   chmod +x /build/bin/parse-spec.sh
-  /build/bin/parse-spec.sh ./ceph.spec.builder > /build/out/post-install.sh
+  /build/bin/parse-spec.sh ./ceph.spec.builder > /build/out/build/post-install.sh
 fi
-
 
 if [[ $? -ne 0 ]]; then
   journalctl --no-pager -n 500
-fi
-
-if $outdir_moved_run ; then
-  rm /build/out/var/run
-  mv /build/out/var/run.tmp /build/out/var/run
 fi

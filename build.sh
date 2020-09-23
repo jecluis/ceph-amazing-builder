@@ -103,9 +103,14 @@ if $do_container; then
   echo "building working container ${container}"
   echo "  mount path: ${mnt}"
 
-  rsync --verbose \
-    --recursive --links --perms --group --owner --\
-    ${outdir}/* ${mnt}/ || exit 1
+  if [[ -z "${mnt}" || ! -d "${mnt}" ]]; then
+    echo "error mounting final container overlay filesystem"
+    exit 1
+  fi
+
+  rsync --verbose --update \
+    --recursive --links --perms --group --owner --times\
+    ${outdir}/build/* ${mnt}/ || exit 1
   
   chroot ${mnt} \
     env PATH=/usr/sbin:/usr/bin:/sbin:/bin \
