@@ -44,29 +44,42 @@ cat ceph.spec.in |
   sed 's/%install/%install\necho "==> INSTALL <=="/g' > ceph.spec.builder || \
       exit 1
 
+  #   sed 's/make DESTDIR=/make "$CEPH_MFLAGS_JOBS" DESTDIR=/g'
+
 # sed -e 's/mkdir build/mkdir build || true/g' < ceph.spec.in >
 # ceph.spec.builder || exit 1
 git submodule sync || exit 1
 git submodule update --init --recursive || exit 1
 
 
-# note: we got to run this against a 'build' (or whatever) directory inside our
-# build output directory because rpmbuild's build stage **really** wants to
-# remove that directory first. We believe there is a way to force it not to, by
-# editting macros, but we're definitely not going there now. Too hackish.
+parse_spec=/build/bin/parse-spec-section.sh
 
-rpmbuild -bi \
-  --nodeps --noprep --noclean --nocheck \
-  --buildroot=/build/out/build \
-  --verbose --build-in-place \
-  ceph.spec.builder || exit 1
+${parse_spec} ceph.spec.builder build > /build/src/cab-make.sh
+
+# rpmspec --parse ceph.spec.builder |
+${parse_spec} ceph.spec.builder install |
+  sed -n 's/rpmbuild\/BUILDROOT\/ceph-15.2.4-903.g8d6fa42688.x86_64/out/gp' |
+  grep -v '.*make.*DESTDIR' > /build/out/post-make-install.sh
+
+# for debug purposes
+# cp /build/out/post-make-install.sh /build/bin/
+
+bash ./cab-make.sh || exit 1
+cd build || exit 1
+nproc=$(nproc)
+build_args=""
+[[ -z "${nproc}" ]] && build_args="-j${nproc}"
+make ${build_args} DESTDIR=/build/out install || exit 1
+cd ..
+
+bash /build/out/post-make-install.sh || exit 1
 
 
 if [[ -e "/build/bin/parse-spec.sh" ]]; then
-  chmod +x /build/bin/parse-spec.sh
-  /build/bin/parse-spec.sh ./ceph.spec.builder > /build/out/build/post-install.sh
+  /build/bin/parse-spec-post-install.sh \
+    /build/src/ceph.spec.builder > /build/out/build/post-install.sh
 fi
 
-if [[ $? -ne 0 ]]; then
-  journalctl --no-pager -n 500
-fi
+# if [[ $? -ne 0 ]]; then
+#   journalctl --no-pager -n 500
+# fi

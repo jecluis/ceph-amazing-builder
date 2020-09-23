@@ -122,7 +122,7 @@ if $do_container; then
 
   rsync --verbose --update \
     --recursive --links --perms --group --owner --times\
-    ${outdir}/build/* ${mnt}/ || exit 1
+    ${outdir}/* ${mnt}/ || exit 1
   
   chroot ${mnt} \
     env PATH=/usr/sbin:/usr/bin:/sbin:/bin \
