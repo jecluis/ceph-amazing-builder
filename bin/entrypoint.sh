@@ -31,6 +31,9 @@ ceph version: ${version}
  rpm release: ${rpm_release}
 EOF
 
+# we do a bit of hacking on the spec file because we are not using it for its
+# intended purpose, but for (potentially) incremental builds, and definitely not
+# using the tarball.
 cat ceph.spec.in |
   sed "s/@PROJECT_VERSION@/${rpm_version}/g" |
   sed "s/@RPM_RELEASE@/${rpm_release}/g" |
