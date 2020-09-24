@@ -1,15 +1,73 @@
 #!/bin/bash
 
+# extrabuildah="--log-level debug --runroot /srv/extravg/misc/containers-tmp/joao --root /home/joao/.local/share/containers/storage"
+
+extrabuildah=
+
 config="./config.json" # make this configurable via cli
 
 usage() {
-  echo "usage: $0 <vendor> <release> <src> [--do-container]"
+  cat << EOF
+usage: $0 <vendor> <release> <src> [OPTIONS]
+
+OPTIONS:
+
+  --do-container      perform build for a container
+  --buildname <NAME>  build as part of build <NAME>
+  --config|-c <PATH>  path to config file
+  --skip-build        don't build the sources (default: false)
+  --help|-h           this message
+
+EOF
 }
 
-if [[ ! -e "${config}" ]]; then
-  echo "missing config file"
-  exit 1
-fi
+_check_image_exists() {
+  img="${1}"
+  if ! podman $extrabuildah images --format "{{.Repository}}:{{.Tag}}" | \
+       grep -n ${img} ; then
+    return 1
+  fi
+  return 0
+}
+
+do_container=false
+do_build_path=false
+do_build_name=false
+do_skip_build=false
+
+build_path=""
+build_name=""
+config_path="./config.json"
+
+args=()
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --do-container) do_container=true ;;
+    --buildname)
+      do_build_name=true
+      build_name=$2
+      shift 1
+      ;;
+    --config|-c)
+      config_path=$2
+      shift 1
+      ;;
+    --skip-build) do_skip_build=true ;;
+    --help|-h) usage ; exit 0 ;;
+    *) args=(${args[@]} $1) ;;
+  esac
+  shift 1
+done
+
+[[ ${#args} -lt 3 ]] && echo "error: missing arguments" && usage && exit 1
+[[ -z "${config}" ]] && \
+  echo "error: config file not specified" && usage && exit 1
+[[ ! -e "${config}" ]] && echo "error: missing config file" && usage && exit 1
+
+$do_build_name && [[ -z "${build_name}" ]] && \
+  echo "error: build name not specified" && usage && exit 1
+
 
 build_root=$(jq '.build_root' ${config} | sed -n 's/"//gp')
 ccache_root=$(jq '.ccache_root' ${config} | sed -n 's/"//gp')
@@ -22,24 +80,26 @@ with_ccache=false
 [[ ! -d "${ccache_root}" ]] && \
   echo "ccache root directory does not exist" && exit 1
 
-if [[ $# -lt 3 ]]; then
-  usage
-  exit 1
-fi
 
-vendor="$1"
-release="$2"
-srcdir="$3"
+vendor="${args[0]}"
+release="${args[1]}"
+srcdir="${args[2]}"
 
-do_container=false
-[[ -n "$4" && "$4" == "--do-container" ]] && do_container=true
 
 final_base_img=""
 if $do_container ; then
-  final_base_img="cab/base/release/${vendor}:${release}"
-  if ! podman images --format "{{.Repository}}:{{.Tag}}" | \
-       grep -n ${final_base_img} ; then
-    echo "unable to find base image for final build container"
+
+  if $do_build_name ; then
+    final_base_img="cab-builds/${build_name}:latest"
+    if ! _check_image_exists ${final_base_img} ; then
+      final_base_img="cab/base/release/${vendor}:${release}"
+    fi
+  else
+    final_base_img="cab/base/release/${vendor}:${release}"
+  fi
+
+  if ! _check_image_exists ${final_base_img} ; then
+    echo "unable to find base image ${final_base_img} for build container"
     echo "you must run 'image-build.sh' first."
     exit 1
   fi
@@ -54,13 +114,16 @@ fi
   echo "source dir is not a ceph source tree" && exit 1
 
 # prepare output directory
-build_time=$(date --utc +"%Y-%m-%dT%H-%M-%SZ")
-build_name="${vendor}-${release}_${build_time}"
+if ! $do_build_name ; then
+  build_time=$(date --utc +"%Y-%m-%dT%H-%M-%SZ")
+  build_name="${vendor}-${release}_${build_time}"
+fi
+
+# make all build names lower case
+build_name=$(echo ${build_name} | tr '[:upper:]' '[:lower:]')
 
 outdir="${build_root}/${build_name}"
-[[ -d "${outdir}" ]] && \
-  echo "funny enough, build directory at '${outdir}' exists..." && exit 1
-mkdir ${outdir} || exit 1
+[[ ! -d "${outdir}" ]] && ( mkdir ${outdir} || exit 1 )
 
 
 ccache_dir=
@@ -72,19 +135,28 @@ if $with_ccache ; then
   fi
 fi
 
-mydir=$(dirname $0)
-$mydir/tools/run-build.sh build \
-  ${vendor} ${release} ${srcdir} ${outdir} ${ccache_dir} || exit 1
+if ! $do_skip_build ; then
+  echo "==> BUILDING SOURCES"
+  mydir=$(dirname $0)
+  $mydir/tools/run-build.sh build \
+    ${vendor} ${release} ${srcdir} ${outdir} ${ccache_dir} || exit 1
+fi
+
 
 if $do_container; then
 
   ctr_build_time=$(date --utc +"%Y%m%dT%H%M%SZ")
 
-  container=$(buildah from ${final_base_img})
-  mnt=$(buildah mount ${container})
+  container=$(buildah $extrabuildah from ${final_base_img})
+  mnt=$(buildah $extrabuildah mount ${container})
 
-  echo "building working container ${container}"
-  echo "  mount path: ${mnt}"
+  cat << EOF
+==> BUILDING CONTAINER
+  + build name: ${build_name} 
+  + base image: ${final_base_img}
+  +  container: ${container}
+  + mount path: ${mnt}
+EOF
 
   if [[ -z "${mnt}" || ! -d "${mnt}" ]]; then
     echo "error mounting final container overlay filesystem"
@@ -94,16 +166,18 @@ if $do_container; then
   rsync --verbose --update \
     --recursive --links --perms --group --owner --times\
     ${outdir}/* ${mnt}/ || exit 1
-  
-  chroot ${mnt} \
-    env PATH=/usr/sbin:/usr/bin:/sbin:/bin \
-    /bin/bash -x /post-install.sh
 
-  rm ${mnt}/post-install.sh
-  final_container_image="cab-builds/${vendor}/${release}:${ctr_build_time}"
+  if [[ -e "${mnt}/post-install.sh" ]]; then
+    buildah $extrabuildah run ${container} bash -x /post-install.sh || exit 1
+    buildah $extrabuildah run ${container} rm -f /post-install.sh || true
+  fi
 
-  buildah commit ${container} ${final_container_image}
-  buildah unmount ${container}
+  final_container_image="cab-builds/${build_name}:${ctr_build_time}"
+  echo "final container image: ${final_container_image}"
+  # final_container_image="cab-builds/${vendor}/${release}:${ctr_build_time}"
+  buildah $extrabuildah unmount ${container} || exit 1
+  buildah $extrabuildah commit ${container} ${final_container_image} || exit 1
+  buildah tag ${final_container_image} "cab-builds/${build_name}:latest"
 
   echo "container image: ${final_container_image}"
 fi
