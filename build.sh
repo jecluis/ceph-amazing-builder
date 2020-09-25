@@ -12,10 +12,10 @@ usage: $0 <vendor> <release> <src> [OPTIONS]
 
 OPTIONS:
 
-  --do-container      perform build for a container
   --buildname <NAME>  build as part of build <NAME>
   --config|-c <PATH>  path to config file
   --skip-build        don't build the sources (default: false)
+  --skip-container    skip building a container (default: false)
   --help|-h           this message
 
 EOF
@@ -30,10 +30,10 @@ _check_image_exists() {
   return 0
 }
 
-do_container=false
 do_build_path=false
 do_build_name=false
 do_skip_build=false
+do_skip_container=false
 
 build_path=""
 build_name=""
@@ -43,7 +43,6 @@ args=()
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --do-container) do_container=true ;;
     --buildname)
       do_build_name=true
       build_name=$2
@@ -54,6 +53,7 @@ while [[ $# -gt 0 ]]; do
       shift 1
       ;;
     --skip-build) do_skip_build=true ;;
+    --skip-container) do_skip_container=true ;;
     --help|-h) usage ; exit 0 ;;
     *) args=(${args[@]} $1) ;;
   esac
@@ -87,7 +87,7 @@ srcdir="${args[2]}"
 
 
 final_base_img=""
-if $do_container ; then
+if ! $do_skip_container ; then
 
   if $do_build_name ; then
     final_base_img="cab-builds/${build_name}:latest"
@@ -143,7 +143,7 @@ if ! $do_skip_build ; then
 fi
 
 
-if $do_container; then
+if ! $do_skip_container; then
 
   ctr_build_time=$(date --utc +"%Y%m%dT%H%M%SZ")
 
