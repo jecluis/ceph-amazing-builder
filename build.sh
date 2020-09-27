@@ -1,10 +1,9 @@
-#!/bin/bash
+#!/bin/bash -x
 
 # extrabuildah="--log-level debug --runroot /srv/extravg/misc/containers-tmp/joao --root /home/joao/.local/share/containers/storage"
 
 extrabuildah=
 
-config="./config.json" # make this configurable via cli
 
 usage() {
   cat << EOF
@@ -61,16 +60,17 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ ${#args} -lt 3 ]] && echo "error: missing arguments" && usage && exit 1
-[[ -z "${config}" ]] && \
+[[ -z "${config_path}" ]] && \
   echo "error: config file not specified" && usage && exit 1
-[[ ! -e "${config}" ]] && echo "error: missing config file" && usage && exit 1
+[[ ! -e "${config_path}" ]] && \
+  echo "error: missing config file" && usage && exit 1
 
 $do_build_name && [[ -z "${build_name}" ]] && \
   echo "error: build name not specified" && usage && exit 1
 
 
-build_root=$(jq '.build_root' ${config} | sed -n 's/"//gp')
-ccache_root=$(jq '.ccache_root' ${config} | sed -n 's/"//gp')
+build_root=$(jq '.builds' ${config_path} | sed -n 's/"//gp')
+ccache_root=$(jq '.ccache' ${config_path} | sed -n 's/"//gp')
 
 [[ -z "${build_root}" ]] && echo "build root not configured" && exit 1
 [[ ! -d "${build_root}" ]] && echo "build root does not exist" && exit 1
