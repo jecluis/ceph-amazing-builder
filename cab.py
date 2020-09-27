@@ -5,9 +5,21 @@ import errno
 import sys
 import subprocess
 import shlex
+import shutil
 from appdirs import user_config_dir
 from pathlib import Path
 from typing import Dict, Any, Tuple, Optional, List
+
+
+# from
+#  https://stackoverflow.com/questions/1094841/reusable-library-to-get-human-readable-version-of-file-size
+# because I'm lazy.
+def sizeof_fmt(num, suffix='B'):
+	for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
+		if abs(num) < 1024.0:
+			return "%3.1f%s%s" % (num, unit, suffix)
+		num /= 1024.0
+	return "%.1f%s%s" % (num, 'Yi', suffix)
 
 
 class Config:
@@ -172,9 +184,12 @@ class Build:
 		config.write_build_config(name, conf_dict)
 		return Build(config, name)
 
-	def _get_build_dir(self) -> str:
+	def get_build_dir(self) -> str:
 		builds = self._config.get_builds_dir()
 		return str(builds.joinpath(self._name))
+
+	def get_sources_dir(self) -> str:
+		return self._sources
 
 	def print(self, with_prefix=False, verbose=False):
 		lst = [
@@ -182,7 +197,7 @@ class Build:
 			("   - ", "vendor:", self._vendor),
 			("   - ", "release:", self._release),
 			("   - ", "sourcedir:", self._sources),
-			("   - ", "build dir:", self._get_build_dir())
+			("   - ", "build dir:", self.get_build_dir())
 		]
 		for p, k, v in lst:
 			s = "{}{}".format((p if with_prefix else ""), k)			
@@ -193,9 +208,9 @@ class Build:
 	def _remove_build(self):
 		builds_dir = config.get_builds_dir()
 		buildpath = builds_dir.joinpath(self._name)
-		if not buildpath.exists():
+		if not buildpath.exists() or not buildpath.is_dir():
 			return
-		buildpath.unlink()
+		buildpath.rmdir()
 
 	def _remove_containers(self):		
 		pass
@@ -215,33 +230,62 @@ class Build:
 		build._destroy(remove_build, remove_containers)
 
 
-	def _commit(self):
+	def _build(self):
 		cfg = self._config.get_config_path()
 		cmd = "buildah unshare ./build.sh {} {} {} -c {} --buildname {}".format(
 			self._vendor, self._release, self._sources, cfg, self._name
 		)
 		proc = subprocess.run(shlex.split(cmd), stdout=sys.stdout)
 		if proc.returncode != 0:
-			click.secho(f"error committing build: {proc.returncode}", fg="red")
+			click.secho(f"error building: {proc.returncode}", fg="red")
 		else:
-			click.secho(f"committed build", fg="green")
+			click.secho(f"succesfully built", fg="green")
 
 	@classmethod
-	def commit(cls, config: Config, name: str):
+	def build(cls, config: Config, name: str, nuke_build=False):
 		if not config.build_exists(name):
 			raise UnknownBuildError(name)
-		Build(config, name)._commit()
+		build = Build(config, name)
+
+		# nuke an existing build directory; force rebuild from start.    
+		if nuke_build:
+			sources_dir: str = build.get_sources_dir()
+			sources_path: Path = Path(sources_dir)
+			assert sources_path.exists() and sources_path.is_dir()
+			bin_build_path = sources_path.joinpath('build')
+			if bin_build_path.exists():
+				assert bin_build_path.is_dir()
+				shutil.rmtree(bin_build_path)
+	
+		build._build()
 
 
 class ContainerImage:
 	_hashid: str
 	_names: List[str]
-	def __init__(self, hashid: str, names: List[str]):
+	_tags: List[str]
+	_size: float
+	def __init__(self, hashid: str, names: List[str], size: int):
 		self._hashid: str = hashid[:12]
 		self._names: List[str] = names
+		self._tags: List[str] = self._get_tags()
+		self._size: float = size
+
+	def _get_tags(self):
+		tags: List[str] = []
+		for name in self._names:
+			fields = name.split(':')
+			if (len(fields) < 2): continue
+			tags.append(fields[1])
+		return tags
 
 	def print(self):
-		click.secho(f"- id: {self._hashid}")
+		latest: str = ""
+		if 'latest' in self._tags:
+			latest = click.style("(latest)", fg="yellow")
+		print("{} {} ({}) {}".format(
+			click.style(f"- id:", fg="cyan"), self._hashid,
+			            sizeof_fmt(self._size), latest))
 		for name in self._names:
 			print("{} {}".format(click.style("  - name:", fg="cyan"), name))
 
@@ -279,13 +323,35 @@ class Containers:
 		cmd = f"podman images --format json {name}"
 		proc = subprocess.run(shlex.split(cmd), stdout=subprocess.PIPE)
 		images_dict = json.loads(proc.stdout)
+		got_imgs: List[str] = []
 		imgs: List[ContainerImage] = []
 		for image_entry in images_dict:
 			image_id: str = image_entry['Id']
+			if image_id in got_imgs:
+				continue
+			got_imgs.append(image_id)
 			names: List[str] = image_entry['Names']
-			imgs.append(ContainerImage(image_id, names))
+			imgs.append(ContainerImage(image_id, names, image_entry['Size']))
 		return imgs
 
+	@classmethod
+	def find_build_image_latest(cls, name: str):
+		imgs: List[ContainerImage] = cls.find_build_images(name)
+		for image in imgs:
+			if 'latest' in image._tags:
+				return image
+		return None
+
+	@classmethod
+	def run_shell(cls, name: str):
+		latest: ContainerImage = cls.find_build_image_latest(name)
+		if not latest:
+			return False
+		
+		cmd = f"podman run -it {latest._hashid} /bin/bash"
+		subprocess.run(shlex.split(cmd))		
+		return True
+		
 
 config = Config()
 
@@ -407,18 +473,34 @@ def create(buildname: str, vendor: str, release: str, sourcedir: str):
 
 @click.command()
 @click.argument('buildname', type=click.STRING)
-def commit(buildname: str):
-	print("=> commit")
+@click.option('--nuke-build', default=False, is_flag=True)
+def build(buildname: str, nuke_build: bool):
+	"""Starts a new build.
+
+	Will run a new build for the sources specified by BUILDNAME, and will create
+	an image, either original or incremental.
+
+	BUILDNAME is the name of the build being built.
+	"""
 	if not config.build_exists(buildname):
 		click.secho(f"error: build '{buildname}' does not exist.", fg="red")
 		sys.exit(errno.ENOENT)
 
-	Build.commit(config, buildname)
+	Build.build(config, buildname, nuke_build=nuke_build)
 
 
 @click.command()
 @click.argument('buildname', type=click.STRING)
 def destroy(buildname: str):
+	"""Destroy an existing build.
+
+	Will always remove the existing configuration for build BUILDNAME.
+	Optionally, may also remove existing an existing build, and the build's
+	containers.
+
+	BUILDNAME is the name of the build to be destroyed.
+	"""
+
 	if not config.build_exists(buildname):
 		click.secho(f"build '{buildname}' does not exist")
 		sys.exit(errno.ENOENT)
@@ -464,13 +546,29 @@ def list_build_images(buildname: str):
 		img.print()
 
 
+@click.command()
+@click.argument('buildname', type=click.STRING)
+def shell(buildname: str):
+	"""Drop into shell of build's latest container.
+
+	BUILDNAME is the name of the build for which we want a shell.
+	"""
+	if not config.build_exists(buildname):
+		click.secho(f"build '{buildname}' does not exist.", fg="red")
+		sys.exit(errno.ENOENT)
+
+	if not Containers.run_shell(buildname):
+		click.secho(f"unable to run shell for build '{buildname}'", fg="red")
+		sys.exit(errno.EINVAL)
+
 
 cli.add_command(init)
 cli.add_command(create)
-cli.add_command(commit)
+cli.add_command(build)
 cli.add_command(destroy)
 cli.add_command(list_builds)
 cli.add_command(list_build_images)
+cli.add_command(shell)
 
 
 if __name__ == '__main__':
