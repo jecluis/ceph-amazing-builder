@@ -18,6 +18,7 @@ class Config:
 	_ccache_dir: Path = None
 	_builds_dir: Path = None
 
+	_ccache_default_size: str = None
 
 	def __init__(self):
 		config_dir = user_config_dir('cab')
@@ -25,6 +26,7 @@ class Config:
 		self._config_dir.mkdir(0o755, exist_ok=True)
 		self._build_config_dir = self._config_dir.joinpath('builds')
 		self._build_config_dir.mkdir(0o755, exist_ok=True)
+		self._ccache_default_size = '10G'
 		self._has_config = self._read_config()
 
 
@@ -41,6 +43,8 @@ class Config:
 				self._ccache_dir = Path(config_dict['ccache'])
 			if 'builds' in config_dict:
 				self._builds_dir = Path(config_dict['builds'])
+			if 'ccache_size' in config_dict:
+				self._ccache_default_size = config_dict['ccache_size']
 
 		if not self._builds_dir:
 			return False
@@ -50,6 +54,9 @@ class Config:
 	def has_config(self):
 		return self._has_config
 
+	def has_ccache(self):
+		return self.get_ccache_dir is not None
+
 	def get_config_path(self) -> str:
 		return str(self._config_dir.joinpath('config.json'))
 
@@ -58,6 +65,9 @@ class Config:
 	
 	def get_builds_dir(self) -> Path:
 		return self._builds_dir
+
+	def get_ccache_size(self) -> int:
+		return self._ccache_default_size
 
 	def set_ccache_dir(self, ccache_str: str):
 		self._ccache_dir = Path(ccache_str).expanduser()

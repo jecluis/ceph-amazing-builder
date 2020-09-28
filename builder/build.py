@@ -3,8 +3,28 @@ import sys
 import shlex
 import subprocess
 import shutil
+import os
 from pathlib import Path
+from datetime import datetime as dt
 from .config import Config, UnknownBuildError
+from .containers import Containers, ContainerImage
+from typing import Tuple
+
+
+def cprint(prefix: str, suffix: str):
+	print("{}: {}".format(click.style(prefix, fg="cyan"), suffix))
+
+
+class NoAvailableImageError(Exception):
+	pass
+
+
+class BuildError(Exception):
+	pass
+
+
+class ContainerBuildError(Exception):
+	pass
 
 
 class Build:
@@ -110,7 +130,7 @@ class Build:
 		build._build()
 
 	
-	def _build(self):
+	def _build2(self):
 		cfg = self._config.get_config_path()
 		cmd = "buildah unshare ./build.sh {} {} {} -c {} --buildname {}".format(
 			self._vendor, self._release, self._sources, cfg, self._name
@@ -120,3 +140,167 @@ class Build:
 			click.secho(f"error building: {proc.returncode}", fg="red")
 		else:
 			click.secho(f"succesfully built", fg="green")
+
+
+	def _build(self, do_build=True, do_container=True):
+
+		ccache_path: Path = None
+		build_path: Path = None
+		base_build_image: str = None
+
+		# prepare ccache
+		if self._config.has_ccache():
+			ccache_path: Path =	self._config.get_ccache_dir().joinpath(
+			                             f"{self._release}/{self._vendor}")
+			if not ccache_path.exists():
+				ccache_path.mkdir(parents=True, exist_ok=True)
+				ccache_size = self._config.get_ccache_size()
+				cmd = f'ccache -M {ccache_size}'
+				subprocess.run(
+					shlex.split(cmd),
+					env={'CCACHE_DIR': str(ccache_path)}
+				)
+		
+		# prepare output build directory
+		build_path = self._config.get_builds_dir().joinpath(self._name)
+		build_path.mkdir(exist_ok=True)
+
+		# check whether a previous build image exists (i.e., we're going to be
+		# an incremental build), or if we are the first (in which case we need
+		# to build on a release image)
+		base_build_image: str = Containers.get_build_name_latest(self._name)
+		if not base_build_image:
+			base_build_image, _ = Containers.find_release_base_image(
+				self._vendor, self._release)
+			if not base_build_image:
+				# we have no images to base our image on.
+				raise NoAvailableImageError("missing release image")
+
+		cprint("ccache path", ccache_path)
+		cprint(" build path", build_path)
+		cprint(" base image", str(base_build_image))
+
+		if do_build:
+			if not self._perform_build(build_path, ccache_path):
+				raise BuildError()
+
+		if do_container:
+			if not self._build_container(build_path, base_build_image):
+				raise ContainerBuildError()
+
+
+	def _perform_build(self, build_path: Path, ccache_path: Path) -> bool:
+		buildscript = Path.cwd().joinpath('tools/run-build.sh').expanduser()
+		if not buildscript.exists():
+			raise BuildError("missing builder script")
+		cprint("builder script", str(buildscript))
+
+		cmd = "{} build {} {} {} {} {}".format(
+			str(buildscript), self._vendor, self._release, self._sources,
+			str(build_path), str(ccache_path)
+		)
+		cprint("build cmd", cmd)
+		proc = subprocess.run(
+		            shlex.split(cmd), stdout=sys.stdout, stderr=sys.stderr)
+		if proc.returncode != 0:
+			raise BuildError(os.strerror(proc.returncode))
+		return True
+		
+
+	def _run_cmd(self, cmd: str) -> Tuple[int, str, str]:
+		proc = subprocess.run(shlex.split(cmd),
+		                      stdout=subprocess.PIPE,
+							  stderr=subprocess.PIPE)
+		stdout = proc.stdout.decode("utf-8")
+		stderr = proc.stderr.decode("utf-8")
+		return proc.returncode, stdout, stderr
+
+
+	def _run_buildah(self, cmd: str) -> Tuple[int, str]:
+		buildah_cmd = 'buildah unshare buildah {}'.format(cmd)		
+		ret, stdout, stderr = self._run_cmd(buildah_cmd)
+		if ret != 0:
+			click.secho(
+			    "error running buildah {}: {}".format(cmd, stderr), fg="red")
+			return ret, stderr
+		return ret, stdout
+
+
+	def _build_container(self,
+	                     build_path: Path,
+						 base_image: str
+	) -> bool:
+
+		# create working container (this is where our binaries will end up at).
+		#
+		ret, result = self._run_buildah(f"from {base_image}")
+		if ret != 0:
+			raise ContainerBuildError(os.strerror(ret))
+		working_container = result.splitlines()[0]
+		if not working_container or len(working_container) == 0:
+			raise ContainerBuildError("no working container id returned")
+
+		# mount our working container, so we can transfer our binaries.
+		ret, result = self._run_buildah(f"mount {working_container}")
+		if ret != 0:
+			raise ContainerBuildError(os.strerror(ret))
+		path_str = result.splitlines()[0]		
+		if not path_str or len(path_str) == 0:
+			raise ContainerBuildError("no mount point returned")
+
+		mnt_path = Path(path_str)
+		if not mnt_path.exists():
+			raise ContainerBuildError("mount path does not exist")
+		assert mnt_path.is_dir()
+
+		# transfer binaries.
+		cmd = f"rsync --info=stats --update --recursive --links --perms "\
+			  f"--group --owner --times "\
+			  f"{str(build_path)}/ {str(mnt_path)}"		
+		ret, _, stderr = self._run_cmd(cmd)
+		if ret != 0:
+			raise ContainerBuildError("{}: {}".format(os.strerror(ret), stderr))
+
+		post_install_path = mnt_path.joinpath('post-install.sh')
+		if post_install_path.exists():
+			cmd = f"run {working_container} bash -x /post-install.sh"
+			ret, result = self._run_buildah(cmd)
+			if ret != 0:
+				raise ContainerBuildError(
+				         "{}: {}".format(os.strerror(ret), result))
+			post_install_path.unlink()
+
+		container_date = dt.now().strftime("%Y%m%dT%H%M%SZ")
+		container_image_name = Containers.get_build_name(self._name)
+		container_final_image = f"{container_image_name}:{container_date}"
+
+		ret, result = self._run_buildah(f"unmount {working_container}")
+		if ret != 0:
+			raise ContainerBuildError("{}: {}".format(os.strerror(ret), result))
+		
+		cmd = f"commit {working_container} {container_final_image}"
+		ret, result = self._run_buildah(cmd)
+		if ret != 0:
+			raise ContainerBuildError("{}: {}".format(os.strerror(ret), result))
+		new_container_id = result.splitlines()[0]
+
+		cmd = f"tag {new_container_id} {container_image_name}:latest"
+		ret, result = self._run_buildah(cmd)
+		if ret != 0:
+			raise ContainerBuildError("{}: {}".format(os.strerror(ret), result))
+
+		print("{}: {} ({})".format(
+			click.style("built container", fg="green"),
+			container_final_image,
+			new_container_id[:12]))
+
+		return True
+
+
+			
+
+
+
+
+		
+	

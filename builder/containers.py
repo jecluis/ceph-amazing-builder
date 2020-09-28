@@ -15,25 +15,55 @@ def sizeof_fmt(num, suffix='B'):
 		num /= 1024.0
 	return "%.1f%s%s" % (num, 'Yi', suffix)
 
+class ContainerImageName:
+	_remote: str
+	_repo: str
+	_name: str
+	_tag: str
+
+	def __init__(self, remote, repo, name, tag):
+		self._remote = remote
+		self._repo = repo
+		self._name = name
+		self._tag = tag
+
+	@property
+	def name(self):
+		return self._name
+	
+	@property
+	def tag(self):
+		return self._tag
+
+	def __str__(self):
+		return f"{self._remote}/{self._repo}/{self._name}:{self._tag}"
+
 
 class ContainerImage:
 	_hashid: str
-	_names: List[str]
+	_name: str
+	_names: List[ContainerImageName]
 	_tags: List[str]
 	_size: float
-	def __init__(self, hashid: str, names: List[str], size: int):
+
+	def __init__(self, hashid: str,
+	             names: List[ContainerImageName], size: int):
 		self._hashid: str = hashid[:12]
-		self._names: List[str] = names
+		self._names: List[ContainerImageName] = names
 		self._tags: List[str] = self._get_tags()
 		self._size: float = size
 
+
 	def _get_tags(self):
 		tags: List[str] = []
+		name: ContainerImageName
 		for name in self._names:
-			fields = name.split(':')
-			if (len(fields) < 2): continue
-			tags.append(fields[1])
+			tags.append(name._tag)
 		return tags
+
+
+	def has_tag(self, tag: str) -> bool:
+		return tag in self._tags
 
 	def print(self):
 		latest: str = ""
@@ -44,6 +74,19 @@ class ContainerImage:
 			            sizeof_fmt(self._size), latest))
 		for name in self._names:
 			print("{} {}".format(click.style("  - name:", fg="cyan"), name))
+
+
+	def __str__(self) -> str:
+		return f"{self._hashid} {self._names}"
+
+	
+	def get_latest_name(self) -> str:
+		name: ContainerImageName
+		for name in self._names:
+			if name.tag == "latest":
+				return str(name)
+		return None
+
 
 
 class Containers:
@@ -75,8 +118,8 @@ class Containers:
 		return None, None
 
 	@classmethod
-	def find_build_images(cls, name="") -> List[ContainerImage]:
-		cmd = f"podman images --format json {name}"
+	def find_build_images(cls, buildname="") -> List[ContainerImage]:
+		cmd = f"podman images --format json cab-builds/{buildname}"
 		proc = subprocess.run(shlex.split(cmd), stdout=subprocess.PIPE)
 		images_dict = json.loads(proc.stdout)
 		got_imgs: List[str] = []
@@ -86,7 +129,14 @@ class Containers:
 			if image_id in got_imgs:
 				continue
 			got_imgs.append(image_id)
-			names: List[str] = image_entry['Names']
+			names: List[ContainerImageName] = []
+			for n in image_entry['Names']:
+				[remote, repo, img_name] = n.split('/')
+				[img_name, tag] = img_name.split(':')
+				if img_name != buildname:
+					# print(f"img does not match: ")
+					continue
+				names.append(ContainerImageName(remote, repo, img_name, tag))
 			imgs.append(ContainerImage(image_id, names, image_entry['Size']))
 		return imgs
 
@@ -94,9 +144,18 @@ class Containers:
 	def find_build_image_latest(cls, name: str):
 		imgs: List[ContainerImage] = cls.find_build_images(name)
 		for image in imgs:
-			if 'latest' in image._tags:
+			if image.has_tag('latest'):
 				return image
 		return None
+
+	@classmethod
+	def has_build_image(cls, name: str, tag="latest"):
+		imgs: List[ContainerImage] = cls.find_build_images(name)
+		for image in imgs:
+			if image.has_tag(tag):
+				return True
+		return False
+		
 
 	@classmethod
 	def run_shell(cls, name: str):
@@ -107,3 +166,13 @@ class Containers:
 		cmd = f"podman run -it {latest._hashid} /bin/bash"
 		subprocess.run(shlex.split(cmd))		
 		return True
+
+
+	@classmethod
+	def get_build_name(cls, buildname: str):
+		return f"cab-builds/{buildname}"
+
+	@classmethod
+	def get_build_name_latest(cls, buildname: str):
+		img: ContainerImage = cls.find_build_image_latest(buildname)
+		return img.get_latest_name()
