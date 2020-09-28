@@ -55,7 +55,7 @@ class Config:
 		return self._has_config
 
 	def has_ccache(self):
-		return self.get_ccache_dir is not None
+		return self.get_ccache_dir() is not None
 
 	def get_config_path(self) -> str:
 		return str(self._config_dir.joinpath('config.json'))

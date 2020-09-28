@@ -129,18 +129,6 @@ class Build:
 	
 		build._build()
 
-	
-	def _build2(self):
-		cfg = self._config.get_config_path()
-		cmd = "buildah unshare ./build.sh {} {} {} -c {} --buildname {}".format(
-			self._vendor, self._release, self._sources, cfg, self._name
-		)
-		proc = subprocess.run(shlex.split(cmd), stdout=sys.stdout)
-		if proc.returncode != 0:
-			click.secho(f"error building: {proc.returncode}", fg="red")
-		else:
-			click.secho(f"succesfully built", fg="green")
-
 
 	def _build(self, do_build=True, do_container=True):
 
@@ -179,7 +167,7 @@ class Build:
 		cprint("ccache path", ccache_path)
 		cprint(" build path", build_path)
 		cprint(" base image", str(base_build_image))
-
+		
 		if do_build:
 			if not self._perform_build(build_path, ccache_path):
 				raise BuildError()
@@ -195,10 +183,29 @@ class Build:
 			raise BuildError("missing builder script")
 		cprint("builder script", str(buildscript))
 
-		cmd = "{} build {} {} {} {} {}".format(
-			str(buildscript), self._vendor, self._release, self._sources,
-			str(build_path), str(ccache_path)
-		)
+		# cmd = "{} build {} {} {} {} {}".format(
+		# 	str(buildscript), self._vendor, self._release, self._sources,
+		# 	str(build_path), str(ccache_path)
+		# )
+		build_image = \
+			Containers.find_base_build_image(self._vendor, self._release)
+		if not build_image:
+			raise BuildError("unable to find base build image")
+
+		bindir = Path.cwd().joinpath("bin")
+
+		cmd = f"podman run -it --userns=keep-id " \
+			  f"-v {bindir}:/build/bin " \
+			  f"-v {self._sources}:/build/src " \
+			  f"-v {str(build_path)}:/build/out"
+		
+		if ccache_path is not None:
+			cmd += f" -v {str(ccache_path)}:/build/ccache"
+
+		cmd += f" {build_image}"
+		if ccache_path is not None:
+			cmd += " --with-ccache"
+		
 		cprint("build cmd", cmd)
 		proc = subprocess.run(
 		            shlex.split(cmd), stdout=sys.stdout, stderr=sys.stderr)
@@ -253,7 +260,7 @@ class Build:
 			raise ContainerBuildError("mount path does not exist")
 		assert mnt_path.is_dir()
 
-		# transfer binaries.
+		# transfer binaries.		
 		cmd = f"rsync --info=stats --update --recursive --links --perms "\
 			  f"--group --owner --times "\
 			  f"{str(build_path)}/ {str(mnt_path)}"		
@@ -261,6 +268,8 @@ class Build:
 		if ret != 0:
 			raise ContainerBuildError("{}: {}".format(os.strerror(ret), stderr))
 
+		# run post-install script
+		#  if present, will set permissions, create users and directories, etc.
 		post_install_path = mnt_path.joinpath('post-install.sh')
 		if post_install_path.exists():
 			cmd = f"run {working_container} bash -x /post-install.sh"
@@ -270,6 +279,10 @@ class Build:
 				         "{}: {}".format(os.strerror(ret), result))
 			post_install_path.unlink()
 
+		# create final container image
+		#  container images are named according to the build name, and tagged
+		#  with the creation date/time, and eventually tagged as 'latest'.
+		#
 		container_date = dt.now().strftime("%Y%m%dT%H%M%SZ")
 		container_image_name = Containers.get_build_name(self._name)
 		container_final_image = f"{container_image_name}:{container_date}"

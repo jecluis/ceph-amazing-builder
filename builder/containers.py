@@ -2,6 +2,7 @@ import click
 import subprocess
 import shlex
 import json
+import re
 from typing import List, Tuple, Optional
 
 
@@ -99,6 +100,41 @@ class Containers:
 
 
 	@classmethod
+	def parse_image_name(cls, namestr: str) -> ContainerImageName:
+		if not namestr or len(namestr) == 0:
+			return None
+
+		matchstr = r"^([.-_\d\w]+)/(.*)/([-_\d\w]+):([-_\d\w]+)$"
+		match = re.match(matchstr, namestr)
+		if not match:
+			return None
+		if len(match.groups()) < 4:
+			return None
+
+		remote = match.group(1)
+		repo = match.group(2)
+		img_name = match.group(3)
+		tag = match.group(4)
+		return ContainerImageName(remote, repo, img_name, tag)
+
+
+	@classmethod
+	def find_base_build_image(cls, vendor: str, release: str) -> Optional[str]:
+		cmd = f"podman images --format json cab/build/{vendor}:{release}"
+		proc = subprocess.run(shlex.split(cmd), stdout=subprocess.PIPE)
+		if proc.returncode != 0:
+			return None
+		# check name matches
+		images_dict = json.loads(proc.stdout)
+		for img in images_dict:
+			for n in img['Names']:
+				img_name = cls.parse_image_name(n)
+				if img_name.name == vendor and img_name.tag == release:
+					return str(img_name)
+		return None		
+
+
+	@classmethod
 	def find_release_base_image(
 	    cls,
 	    vendor: str,
@@ -131,12 +167,11 @@ class Containers:
 			got_imgs.append(image_id)
 			names: List[ContainerImageName] = []
 			for n in image_entry['Names']:
-				[remote, repo, img_name] = n.split('/')
-				[img_name, tag] = img_name.split(':')
-				if img_name != buildname:
+				img_name = cls.parse_image_name(n)
+				if img_name.name != buildname:
 					# print(f"img does not match: ")
 					continue
-				names.append(ContainerImageName(remote, repo, img_name, tag))
+				names.append(img_name)
 			imgs.append(ContainerImage(image_id, names, image_entry['Size']))
 		return imgs
 
