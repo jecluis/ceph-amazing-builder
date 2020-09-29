@@ -55,7 +55,8 @@ cat ceph.spec.in |
   sed "s/mkdir build/mkdir build || true/g" |
   sed "s/%fdupes %{buildroot}%{_prefix}//g" |
   sed 's/%build/%build\necho "===> BUILD <==="/g' |
-  sed 's/%install/%install\necho "==> INSTALL <=="/g' > ceph.spec.builder || \
+  sed 's/%install/%install\necho "==> INSTALL <=="/g' |
+  sed 's/%{buildroot}/\/build\/out/g' > ceph.spec.builder || \
       exit 1
 
 git submodule sync || exit 1
@@ -68,7 +69,6 @@ ${parse_spec} ceph.spec.builder build > /build/src/cab-make.sh
 
 # rpmspec --parse ceph.spec.builder |
 ${parse_spec} ceph.spec.builder install |
-  sed -n 's/rpmbuild\/BUILDROOT\/ceph-15.2.4-903.g8d6fa42688.x86_64/out/gp' |
   grep -v '.*make.*DESTDIR' > /build/out/post-make-install.sh
 
 bash ./cab-make.sh || exit 1
