@@ -54,8 +54,6 @@ cat ceph.spec.in |
   sed "s/@TARBALL_BASENAME@/ceph-${version}/g" |
   sed "s/mkdir build/mkdir build || true/g" |
   sed "s/%fdupes %{buildroot}%{_prefix}//g" |
-  sed 's/%build/%build\necho "===> BUILD <==="/g' |
-  sed 's/%install/%install\necho "==> INSTALL <=="/g' |
   sed 's/%{buildroot}/\/build\/out/g' > ceph.spec.builder || \
       exit 1
 
@@ -67,12 +65,12 @@ parse_spec=/build/bin/parse-spec-section.sh
 
 ${parse_spec} ceph.spec.builder build > /build/src/cab-make.sh
 
-# rpmspec --parse ceph.spec.builder |
 ${parse_spec} ceph.spec.builder install |
   grep -v '.*make.*DESTDIR' > /build/out/post-make-install.sh
 
 bash ./cab-make.sh || exit 1
-cd build || exit 1
+rm ./cab-make.sh # we no longer need it
+pushd build || exit 1
 
 nproc=$(nproc)
 build_args=""
@@ -85,13 +83,7 @@ fi
 
 make ${build_args} DESTDIR=/build/out $install_type || exit 1
 
-cd ..
+popd
 
 bash /build/out/post-make-install.sh || exit 1
 rm /build/out/post-make-install.sh
-
-
-if [[ -e "/build/bin/parse-spec.sh" ]]; then
-  /build/bin/parse-spec-post-install.sh \
-    /build/src/ceph.spec.builder > /build/out/build/post-install.sh
-fi
