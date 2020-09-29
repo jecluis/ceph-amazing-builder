@@ -1,4 +1,4 @@
-import json
+import yaml
 from pathlib import Path
 from appdirs import user_config_dir
 from typing import Dict, Any, List
@@ -30,22 +30,33 @@ class Config:
 		self._has_config = self._read_config()
 
 
-	def _read_config(self) -> bool:
-		config_path = self._config_dir.joinpath('config.json')
-		# print(f"config path: {config_path}")
+	def _read_config_file(self, config_path: Path) -> Dict[str, Any]:
+		assert config_path.exists()
+		with config_path.open('r') as fd:
+			config_dict: Dict[str, str] = yaml.safe_load(fd)
+			return config_dict
+
+
+	def _read_config(self):
+		config_path = self._config_dir.joinpath('config.yaml')
 		if not config_path.exists():
 			return False
-	
-		# print("reading config file")
-		with config_path.open('r') as fd:
-			config_dict: Dict[str, str] = json.load(fd)
-			if 'ccache' in config_dict:
-				self._ccache_dir = Path(config_dict['ccache'])
-			if 'builds' in config_dict:
-				self._builds_dir = Path(config_dict['builds'])
-			if 'ccache_size' in config_dict:
-				self._ccache_default_size = config_dict['ccache_size']
 
+		config_dict = self._read_config_file(config_path)
+		if not 'global' in config_dict:
+			return False
+		global_config = config_dict['global']
+		if 'ccache' in global_config:
+			ccache_config = global_config['ccache']
+			if 'path' in ccache_config:
+				self._ccache_dir = Path(ccache_config['path'])
+			if 'size' in global_config:
+				self._ccache_default_size = ccache_config['size']
+		if 'builds' in global_config:
+			builds_config = global_config['builds']
+			if 'path' in builds_config:
+				self._builds_dir = Path(builds_config['path'])
+		
 		if not self._builds_dir:
 			return False
 		return True
@@ -58,7 +69,7 @@ class Config:
 		return self.get_ccache_dir() is not None
 
 	def get_config_path(self) -> str:
-		return str(self._config_dir.joinpath('config.json'))
+		return str(self._config_dir.joinpath('config.yaml'))
 
 	def get_ccache_dir(self) -> Path:
 		return self._ccache_dir
@@ -78,10 +89,16 @@ class Config:
 	
 	def _write_config(self):
 		assert self._config_dir.exists()
-		config_file = 'config.json'
+		config_file = 'config.yaml'
 		d = {
-				'ccache': str(self._ccache_dir),
-				'builds': str(self._builds_dir)
+			'global': {
+				'ccache': {
+					'path': str(self._ccache_dir)
+				},
+				'builds': {
+					'path': str(self._builds_dir)
+				}
+			}
 		}
 		path = self._config_dir.joinpath(config_file)
 		self._write_config_file(d, path)
@@ -89,14 +106,15 @@ class Config:
 
 	def _write_config_file(self, d: Dict[str, Any], path: Path):
 		with path.open('w') as fd:
-			json.dump(d, fd)
+			yaml.dump(d, stream=fd)
+			# json.dump(d, fd)
 
 
 	def commit(self):
 		self._write_config()
 
 	def _get_build_config_path(self, name: str) -> Path:
-		return self._build_config_dir.joinpath(f'{name}.json')
+		return self._build_config_dir.joinpath(f'{name}.yaml')
 	
 	def build_exists(self, name: str) -> bool:
 		return self._get_build_config_path(name).exists()
@@ -106,9 +124,7 @@ class Config:
 			raise UnknownBuildError(name)
 
 		path = self._get_build_config_path(name)
-		build_config = None
-		with path.open('r') as fd:
-			build_config = json.load(fd)
+		build_config = self._read_config_file(path)
 		return build_config
 
 	def write_build_config(self, name: str, conf_dict: Dict[str, Any]):
@@ -120,7 +136,7 @@ class Config:
 	def get_builds(self) -> List[str]:
 		lst = []
 		for build in self._build_config_dir.iterdir():
-			if build.suffix != '.json':
+			if build.suffix != '.yaml':
 				continue
 			lst.append(build.with_suffix('').name)
 		return lst
