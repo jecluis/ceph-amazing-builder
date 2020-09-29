@@ -135,20 +135,35 @@ def create(buildname: str, vendor: str, release: str, sourcedir: str):
 
 @click.command()
 @click.argument('buildname', type=click.STRING)
+@click.option('-d', '--with-debug', default=False, is_flag=True,
+	help="build with debug symbols (increases build size)")
+@click.option('--with-tests', default=False, is_flag=True,
+	help="build with tests (increases build size)")
 @click.option('--nuke-build', default=False, is_flag=True)
-def build(buildname: str, nuke_build: bool):
+def build(
+    buildname: str,
+    nuke_build: bool,
+    with_debug: bool,
+    with_tests: bool
+):
 	"""Starts a new build.
 
 	Will run a new build for the sources specified by BUILDNAME, and will create
 	an image, either original or incremental.
 
 	BUILDNAME is the name of the build being built.
+
+	Please note that some flags, such as '--with-debug' and '--with-tests' will
+	only be effective when building for the first time. Should one change their
+	minds after the first build, it is necessary to recreate a fresh state in
+	the sources directory.
 	"""
 	if not config.build_exists(buildname):
 		click.secho(f"error: build '{buildname}' does not exist.", fg="red")
 		sys.exit(errno.ENOENT)
 
-	Build.build(config, buildname, nuke_build=nuke_build)
+	Build.build(config, buildname, nuke_build=nuke_build,
+	            with_debug=with_debug, with_tests=with_tests)
 
 
 @click.command()
@@ -198,7 +213,7 @@ def list_build_images(buildname: str):
 		click.secho(f"build '{buildname}' does not exist.", fg="red")
 		sys.exit(errno.ENOENT)
 	
-	images: List[ContainerImage] = Containers.find_build_images(name=buildname)
+	images: List[ContainerImage] = Containers.find_build_images(buildname)
 	if len(images) == 0:
 		click.secho(f"no images for build '{buildname}'", fg="red")
 		sys.exit(0)

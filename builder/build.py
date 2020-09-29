@@ -112,7 +112,8 @@ class Build:
 
 
 	@classmethod
-	def build(cls, config: Config, name: str, nuke_build=False):
+	def build(cls, config: Config, name: str, nuke_build=False,
+	          with_debug=False, with_tests=False):
 		if not config.build_exists(name):
 			raise UnknownBuildError(name)
 		build = Build(config, name)
@@ -127,10 +128,11 @@ class Build:
 				assert bin_build_path.is_dir()
 				shutil.rmtree(bin_build_path)
 	
-		build._build()
+		build._build(with_debug=with_debug, with_tests=with_tests)
 
 
-	def _build(self, do_build=True, do_container=True):
+	def _build(self, do_build=True, do_container=True,
+	           with_debug=False, with_tests=False):
 
 		ccache_path: Path = None
 		build_path: Path = None
@@ -169,7 +171,8 @@ class Build:
 		cprint(" base image", str(base_build_image))
 		
 		if do_build:
-			if not self._perform_build(build_path, ccache_path):
+			if not self._perform_build(build_path, ccache_path,
+			                           with_debug, with_tests):
 				raise BuildError()
 
 		if do_container:
@@ -177,7 +180,9 @@ class Build:
 				raise ContainerBuildError()
 
 
-	def _perform_build(self, build_path: Path, ccache_path: Path) -> bool:
+	def _perform_build(self, build_path: Path, ccache_path: Path,
+	                   with_debug: bool, with_tests: bool
+	) -> bool:
 		""" Performs the actual, containerized build from specified sources.
 
 			The build process is based on running a specific build container,
@@ -188,6 +193,12 @@ class Build:
 			will live.
 
 			ccache_path is the location for the vendor/release ccache.
+
+			with_debug will instruct the build script to build with debug
+			symbols.
+
+			with_tests will instruct the build script to build the tests.
+			
 		"""
 
 		build_image = \
@@ -196,6 +207,12 @@ class Build:
 			raise BuildError("unable to find base build image")
 
 		bindir = Path.cwd().joinpath("bin")
+		extra_args = []
+
+		if with_debug:
+			extra_args.append("--with-debug")
+		if with_tests:
+			extra_args.append("--with-tests")
 
 		cmd = f"podman run -it --userns=keep-id " \
 			  f"-v {bindir}:/build/bin " \
@@ -204,14 +221,16 @@ class Build:
 		
 		if ccache_path is not None:
 			cmd += f" -v {str(ccache_path)}:/build/ccache"
+			extra_args.append("--with-ccache")
 
 		# currently, the build image's entrypoint requires an argument to
 		# perform a build using ccache.
 		cmd += f" {build_image}"
-		if ccache_path is not None:
-			cmd += " --with-ccache"
+		extra_args_str = ' '.join(extra_args)
+		cmd += f" {extra_args_str}"
 		
 		# cprint("build cmd", cmd)
+		# sys.exit(1)
 		proc = subprocess.run(
 		            shlex.split(cmd), stdout=sys.stdout, stderr=sys.stderr)
 		if proc.returncode != 0:

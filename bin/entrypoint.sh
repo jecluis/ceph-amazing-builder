@@ -1,11 +1,15 @@
 #!/bin/bash
 
+do_with_ccache=false
+do_with_debug=false
+do_with_tests=false
 
-with_ccache=false
 while [[ $# -gt 0 ]]; do
 
   case $1 in
-    --with-ccache) with_ccache=true ;;
+    --with-ccache) do_with_ccache=true ;;
+    --with-debug) do_with_debug=true ;;
+    --with-tests) do_with_tests=true ;;
     *) echo "unknown argument '$1'" ; exit 1 ;;
   esac
   shift 1
@@ -13,13 +17,23 @@ done
 
 cd /build/src
 
-if $with_ccache ; then
+extra_args="-DCMAKE_COLOR_MAKEFILE=OFF"
+
+if ! $do_with_tests ; then
+  extra_args="$extra_args -DWITH_TESTS=OFF"
+fi
+
+if ! $do_with_debug ; then
+  extra_args="$extra_args -DCMAKE_BUILD_TYPE=RelWithDebInfo"
+fi
+
+if $do_with_ccache ; then
   echo "---> WITH CCACHE <---"
   export CCACHE_DIR=/build/ccache
   export CCACHE_BASEDIR=/build/src
-  export CEPH_EXTRA_CMAKE_ARGS="-DWITH_CCACHE=ON"
+  extra_args="$extra_args -DWITH_CCACHE=ON" 
 fi
-
+export CEPH_EXTRA_CMAKE_ARGS="$extra_args"
 
 version=$(git describe --long --match 'v*' | sed 's/^v//')
 rpm_version=$(echo ${version} | cut -d'-' -f 1-1)
@@ -59,13 +73,22 @@ ${parse_spec} ceph.spec.builder install |
 
 bash ./cab-make.sh || exit 1
 cd build || exit 1
+
 nproc=$(nproc)
 build_args=""
 [[ -z "${nproc}" ]] && build_args="-j${nproc}"
-make ${build_args} DESTDIR=/build/out install || exit 1
+
+install_type="install"
+if ! $do_with_debug ; then
+  install_type="install/strip"
+fi
+
+make ${build_args} DESTDIR=/build/out $install_type || exit 1
+
 cd ..
 
 bash /build/out/post-make-install.sh || exit 1
+rm /build/out/post-make-install.sh
 
 
 if [[ -e "/build/bin/parse-spec.sh" ]]; then
