@@ -178,15 +178,18 @@ class Build:
 
 
 	def _perform_build(self, build_path: Path, ccache_path: Path) -> bool:
-		buildscript = Path.cwd().joinpath('tools/run-build.sh').expanduser()
-		if not buildscript.exists():
-			raise BuildError("missing builder script")
-		cprint("builder script", str(buildscript))
+		""" Performs the actual, containerized build from specified sources.
 
-		# cmd = "{} build {} {} {} {} {}".format(
-		# 	str(buildscript), self._vendor, self._release, self._sources,
-		# 	str(build_path), str(ccache_path)
-		# )
+			The build process is based on running a specific build container,
+			based on a given release, against the build's sources, and finally
+			installing the binaries into the build's build path.
+
+			build_path is the location of the directory where our final build
+			will live.
+
+			ccache_path is the location for the vendor/release ccache.
+		"""
+
 		build_image = \
 			Containers.find_base_build_image(self._vendor, self._release)
 		if not build_image:
@@ -202,11 +205,13 @@ class Build:
 		if ccache_path is not None:
 			cmd += f" -v {str(ccache_path)}:/build/ccache"
 
+		# currently, the build image's entrypoint requires an argument to
+		# perform a build using ccache.
 		cmd += f" {build_image}"
 		if ccache_path is not None:
 			cmd += " --with-ccache"
 		
-		cprint("build cmd", cmd)
+		# cprint("build cmd", cmd)
 		proc = subprocess.run(
 		            shlex.split(cmd), stdout=sys.stdout, stderr=sys.stderr)
 		if proc.returncode != 0:
