@@ -210,4 +210,6 @@ class Containers:
 	@classmethod
 	def get_build_name_latest(cls, buildname: str):
 		img: ContainerImage = cls.find_build_image_latest(buildname)
+		if not img:
+			return None
 		return img.get_latest_name()
