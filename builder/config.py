@@ -141,12 +141,13 @@ class Config:
 			lst.append(build.with_suffix('').name)
 		return lst
 
-	def remove_build(self, buildname: str):
+	def remove_build(self, buildname: str) -> bool:
 		if not self.build_exists(buildname):
-			return
+			return True
 		buildpath = self._get_build_config_path(buildname)
 		assert buildpath.exists()
 		buildpath.unlink()
+		return True
 
 
 	def print(self):
