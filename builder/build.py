@@ -35,10 +35,14 @@ class Build:
 	_release: str = None
 	_sources: str = None
 
+	_with_debug: bool = False
+	_with_tests: bool = False
+
 	def __init__(self, config: Config, name: str):
 		self._config = config
 		self._name = name
 		self._read_config()
+
 
 	def _read_config(self):
 		if not self._config.build_exists(self._name):
@@ -54,16 +58,36 @@ class Build:
 		self._release = build_config['release']
 		self._sources = build_config['sources']
 
+		if 'build' in build_config:
+			if 'debug' in build_config['build']:
+				self._with_debug = build_config['build']['debug']
+			if 'tests' in build_config['build']:
+				self._with_tests = build_config['build']['tests']
+
+
 	@classmethod
-	def create(cls, config, name, vendor, release, sources):
+	def create(cls, config, name, vendor, release, sources,
+	           with_debug=False, with_tests=False):
 		conf_dict = {
 			'name': name,
 			'vendor': vendor,
 			'release': release,
-			'sources': sources
+			'sources': sources,
+			'build': {
+				'debug': with_debug,
+				'tests': with_tests
+			}
 		}
 		config.write_build_config(name, conf_dict)
 		return Build(config, name)
+
+	@property
+	def with_debug(self):
+		return self._with_debug
+
+	@property
+	def with_tests(self):
+		return self._with_tests
 
 	def get_install_path(self) -> Path:
 		installs = self._config.get_installs_dir()
@@ -81,7 +105,10 @@ class Build:
 			("   - ", "vendor:", self._vendor),
 			("   - ", "release:", self._release),
 			("   - ", "sourcedir:", self._sources),
-			("   - ", "install dir:", self.get_install_dir())
+			("   - ", "install dir:", self.get_install_dir()),
+			("   - ", "build:", ""),
+			("      - ", "with debug:", self.with_debug),
+			("      - ", "with tests:", self.with_tests)
 		]
 		for p, k, v in lst:
 			s = "{}{}".format((p if with_prefix else ""), k)			
@@ -143,7 +170,6 @@ class Build:
 
 	@classmethod
 	def build(cls, config: Config, name: str, nuke_install=False,
-	          with_debug=False, with_tests=False,
 	          with_fresh_build=False):
 		if not config.build_exists(name):
 			raise UnknownBuildError(name)
@@ -159,12 +185,10 @@ class Build:
 				assert install_path.is_dir()
 				shutil.rmtree(install_path)
 	
-		build._build(with_debug=with_debug, with_tests=with_tests,
-		             with_fresh_build=with_fresh_build)
+		build._build(with_fresh_build=with_fresh_build)
 
 
 	def _build(self, do_build=True, do_container=True,
-	           with_debug=False, with_tests=False,
 	           with_fresh_build=False):
 
 		ccache_path: Path = None
@@ -201,7 +225,6 @@ class Build:
 	
 		if do_build:
 			if not self._perform_build(install_path, ccache_path,
-			                           with_debug, with_tests,
 	                                   with_fresh_build):
 				raise BuildError()
 
@@ -211,7 +234,6 @@ class Build:
 
 
 	def _perform_build(self, install_path: Path, ccache_path: Path,
-	                   with_debug: bool, with_tests: bool,
 	                   with_fresh_build: bool
 	) -> bool:
 		""" Performs the actual, containerized build from specified sources.
@@ -238,8 +260,8 @@ class Build:
 		cprint("sources path", self._sources)
 		cprint("install path", install_path)
 		cprint(" ccache path", ccache_path)
-		cprint("  with debug", with_debug)
-		cprint("  with tests", with_tests)
+		cprint("  with debug", self.with_debug)
+		cprint("  with tests", self.with_tests)
 
 
 		build_image = \
@@ -250,9 +272,9 @@ class Build:
 		bindir = Path.cwd().joinpath("bin")
 		extra_args = []
 
-		if with_debug:
+		if self.with_debug:
 			extra_args.append("--with-debug")
-		if with_tests:
+		if self.with_tests:
 			extra_args.append("--with-tests")
 		if with_fresh_build:
 			extra_args.append("--fresh-build")

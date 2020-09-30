@@ -92,7 +92,12 @@ def init():
 @click.argument('sourcedir',
 	type=click.Path(exists=True, file_okay=False,
 	                writable=True, resolve_path=True))
-def create(buildname: str, vendor: str, release: str, sourcedir: str):
+@click.option('--with-debug', default=False, is_flag=True,
+	help="will be built with debug symbols (increases build size)")
+@click.option('--with-tests', default=False, is_flag=True,
+	help="will be built with tests (increases build size)")
+def create(buildname: str, vendor: str, release: str, sourcedir: str,
+           with_debug: bool, with_tests: bool):
 	"""Create a new build; does not build.
 
 	BUILDNAME is the name for the build.\n
@@ -131,7 +136,8 @@ def create(buildname: str, vendor: str, release: str, sourcedir: str):
 		)
 		sys.exit(errno.EINVAL)
 	
-	build = Build.create(config, buildname, vendor, release, sourcedir)
+	build = Build.create(config, buildname, vendor, release, sourcedir,
+	                     with_debug=with_debug, with_tests=with_tests)
 	build.print()
 	click.secho(f"created build '{buildname}'", fg="green")
 
@@ -139,10 +145,6 @@ def create(buildname: str, vendor: str, release: str, sourcedir: str):
 
 @click.command()
 @click.argument('buildname', type=click.STRING)
-@click.option('-d', '--with-debug', default=False, is_flag=True,
-	help="build with debug symbols (increases build size)")
-@click.option('--with-tests', default=False, is_flag=True,
-	help="build with tests (increases build size)")
 @click.option('--with-fresh-build', default=False, is_flag=True,
 	help="cleans the source repository before building")
 @click.option('--nuke-install', default=False, is_flag=True,
@@ -150,8 +152,6 @@ def create(buildname: str, vendor: str, release: str, sourcedir: str):
 def build(
     buildname: str,
     nuke_install: bool,
-    with_debug: bool,
-    with_tests: bool,
 	with_fresh_build: bool
 ):
 	"""Starts a new build.
@@ -161,10 +161,6 @@ def build(
 
 	BUILDNAME is the name of the build being built.
 
-	Please note that some flags, such as '--with-debug' and '--with-tests' will
-	only be effective when building for the first time. Should one change their
-	minds after the first build, it is necessary to recreate a fresh state in
-	the sources directory.
 	"""
 	if not config.build_exists(buildname):
 		click.secho(f"error: build '{buildname}' does not exist.", fg="red")
@@ -191,7 +187,6 @@ def build(
 			sys.exit(1)
 
 	Build.build(config, buildname, nuke_install=nuke_install,
-	            with_debug=with_debug, with_tests=with_tests,
 	            with_fresh_build=with_fresh_build)
 
 
