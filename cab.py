@@ -139,12 +139,16 @@ def create(buildname: str, vendor: str, release: str, sourcedir: str):
 	help="build with debug symbols (increases build size)")
 @click.option('--with-tests', default=False, is_flag=True,
 	help="build with tests (increases build size)")
-@click.option('--nuke-build', default=False, is_flag=True)
+@click.option('--with-fresh-build', default=False, is_flag=True,
+	help="cleans the source repository before building")
+@click.option('--nuke-build', default=False, is_flag=True,
+	help="destroys the output build directory before building")
 def build(
     buildname: str,
     nuke_build: bool,
     with_debug: bool,
-    with_tests: bool
+    with_tests: bool,
+	with_fresh_build: bool
 ):
 	"""Starts a new build.
 
@@ -162,8 +166,29 @@ def build(
 		click.secho(f"error: build '{buildname}' does not exist.", fg="red")
 		sys.exit(errno.ENOENT)
 
+	if nuke_build:
+		sure = click.confirm(
+		    click.style(
+		        "Are you sure you want to remove the install directory?",
+		        fg="red"),
+		    default=False
+		)
+		if not sure:
+			sys.exit(1)
+
+	if with_fresh_build:
+		sure = click.confirm(
+		    click.style(
+		        "Are you sure you want to run a fresh build?",
+			    fg="red"),
+		    default=False
+		)
+		if not sure:
+			sys.exit(1)
+
 	Build.build(config, buildname, nuke_build=nuke_build,
-	            with_debug=with_debug, with_tests=with_tests)
+	            with_debug=with_debug, with_tests=with_tests,
+	            with_fresh_build=with_fresh_build)
 
 
 @click.command()

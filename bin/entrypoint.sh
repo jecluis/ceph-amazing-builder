@@ -1,6 +1,7 @@
 #!/bin/bash
 
 do_with_ccache=false
+do_fresh_build=false
 do_with_debug=false
 do_with_tests=false
 
@@ -8,6 +9,7 @@ while [[ $# -gt 0 ]]; do
 
   case $1 in
     --with-ccache) do_with_ccache=true ;;
+    --fresh-build) do_fresh_build=true ;;
     --with-debug) do_with_debug=true ;;
     --with-tests) do_with_tests=true ;;
     *) echo "unknown argument '$1'" ; exit 1 ;;
@@ -16,6 +18,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 cd /build/src
+
+
+if $do_fresh_build ; then
+
+  echo "=> cleaning up the git repository"
+  git submodule foreach 'git clean -fdx' || exit 1
+  git clean -fdx || exit 1
+
+fi
+
 
 extra_args="-DCMAKE_COLOR_MAKEFILE=OFF"
 

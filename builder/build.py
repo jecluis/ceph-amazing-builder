@@ -113,26 +113,29 @@ class Build:
 
 	@classmethod
 	def build(cls, config: Config, name: str, nuke_build=False,
-	          with_debug=False, with_tests=False):
+	          with_debug=False, with_tests=False,
+	          with_fresh_build=False):
 		if not config.build_exists(name):
 			raise UnknownBuildError(name)
 		build = Build(config, name)
 
-		# nuke an existing build directory; force rebuild from start.    
+		# nuke an existing build install directory; force reinstall.
 		if nuke_build:
-			sources_dir: str = build.get_sources_dir()
-			sources_path: Path = Path(sources_dir)
-			assert sources_path.exists() and sources_path.is_dir()
-			bin_build_path = sources_path.joinpath('build')
-			if bin_build_path.exists():
-				assert bin_build_path.is_dir()
-				shutil.rmtree(bin_build_path)
+			install_path: Path = \
+				config.get_builds_dir().joinpath(build._name)
+			click.secho(
+				f"=> removing install path at {install_path}", fg="yellow")
+			if install_path.exists():
+				assert install_path.is_dir()
+				shutil.rmtree(install_path)
 	
-		build._build(with_debug=with_debug, with_tests=with_tests)
+		build._build(with_debug=with_debug, with_tests=with_tests,
+		             with_fresh_build=with_fresh_build)
 
 
 	def _build(self, do_build=True, do_container=True,
-	           with_debug=False, with_tests=False):
+	           with_debug=False, with_tests=False,
+	           with_fresh_build=False):
 
 		ccache_path: Path = None
 		build_path: Path = None
@@ -141,7 +144,7 @@ class Build:
 		# prepare ccache
 		if self._config.has_ccache():
 			ccache_path: Path =	self._config.get_ccache_dir().joinpath(
-			                             f"{self._release}/{self._vendor}")
+			                             f"{self._vendor}/{self._release}")
 			if not ccache_path.exists():
 				ccache_path.mkdir(parents=True, exist_ok=True)
 				ccache_size = self._config.get_ccache_size()
@@ -168,7 +171,8 @@ class Build:
 	
 		if do_build:
 			if not self._perform_build(build_path, ccache_path,
-			                           with_debug, with_tests):
+			                           with_debug, with_tests,
+	                                   with_fresh_build):
 				raise BuildError()
 
 		if do_container:
@@ -177,7 +181,8 @@ class Build:
 
 
 	def _perform_build(self, build_path: Path, ccache_path: Path,
-	                   with_debug: bool, with_tests: bool
+	                   with_debug: bool, with_tests: bool,
+	                   with_fresh_build: bool
 	) -> bool:
 		""" Performs the actual, containerized build from specified sources.
 
@@ -219,6 +224,8 @@ class Build:
 			extra_args.append("--with-debug")
 		if with_tests:
 			extra_args.append("--with-tests")
+		if with_fresh_build:
+			extra_args.append("--fresh-build")
 
 		cmd = f"podman run -it --userns=keep-id " \
 			  f"-v {bindir}:/build/bin " \
