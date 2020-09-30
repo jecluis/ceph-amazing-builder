@@ -90,14 +90,19 @@ def init():
 @click.argument('vendor', type=click.STRING)
 @click.argument('release', type=click.STRING)
 @click.argument('sourcedir',
-	type=click.Path(exists=True, file_okay=False,
+	type=click.Path(file_okay=False,
 	                writable=True, resolve_path=True))
 @click.option('--with-debug', default=False, is_flag=True,
-	help="will be built with debug symbols (increases build size)")
+	help="will be built with debug symbols (increases build size).")
 @click.option('--with-tests', default=False, is_flag=True,
-	help="will be built with tests (increases build size)")
+	help="will be built with tests (increases build size).")
+@click.option('--clone-from-repo', nargs=1, type=click.STRING,
+	help="git repository to clone from, into SOURCEDIR.")
+@click.option('--clone-from-branch', nargs=1, type=click.STRING,
+	help="git branch to clone from.")
 def create(buildname: str, vendor: str, release: str, sourcedir: str,
-           with_debug: bool, with_tests: bool):
+           with_debug: bool, with_tests: bool,
+		   clone_from_repo: str = None, clone_from_branch: str = None):
 	"""Create a new build; does not build.
 
 	BUILDNAME is the name for the build.\n
@@ -120,8 +125,37 @@ def create(buildname: str, vendor: str, release: str, sourcedir: str,
 		click.secho("please run image-build.sh")
 		sys.exit(errno.ENOENT)
 
-	# check whether sourcedir is a ceph repository
 	sourcepath: Path = Path(sourcedir).resolve()
+
+	if clone_from_repo is not None:
+		if len(clone_from_repo) == 0:
+			click.secho("error: valid git repository required.", fg="red")
+			sys.exit(errno.EINVAL)
+		
+		extra_opts = ""
+		if clone_from_branch is not None:
+			if len(clone_from_branch) == 0:
+				click.secho("error: valid branch required.", fg="red")
+				sys.exit(errno.EINVAL)
+			extra_opts += f"-b {clone_from_branch}"
+
+		if sourcepath.exists():
+			click.secho(f"error: SOURCEDIR exists at {sourcepath}.", fg="red")
+			click.secho("can't clone to an existing directory", fg="red")
+			sys.exit(errno.EEXIST)
+		
+		cmd = f"git clone {extra_opts} {clone_from_repo} {sourcedir}"
+		proc = subprocess.run(shlex.split(cmd))
+		if proc.returncode != 0:
+			click.secho(f"error: unable to clone repository")
+			sys.exit(proc.returncode)
+
+	elif clone_from_branch is not None:
+		click.secho(
+			"error: --clone-from-branch requires --clone-from-repo", fg="red")
+		sys.exit(errno.EINVAL)
+
+	# check whether sourcedir is a ceph repository
 	if not sourcepath.exists() or not sourcepath.is_dir():
 		click.secho(
 			f"error: sourcedir expected to exist as a directory",
