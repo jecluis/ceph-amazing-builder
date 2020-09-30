@@ -8,7 +8,7 @@ from pathlib import Path
 from datetime import datetime as dt
 from .config import Config, UnknownBuildError
 from .containers import Containers, ContainerImage
-from typing import Tuple
+from typing import Tuple, List
 
 
 def cprint(prefix: str, suffix: str):
@@ -87,29 +87,56 @@ class Build:
 				break
 
 
-	def _remove_build(self):
+	def _remove_build(self) -> bool:
 		builds_dir = self._config.get_builds_dir()
 		buildpath = builds_dir.joinpath(self._name)
+		click.secho(
+			f"=> remove install directory at {buildpath}", fg="yellow")
 		if not buildpath.exists() or not buildpath.is_dir():
-			return
-		shutil.rmtree(buildpath)
+			click.secho("  - build path not found", fg="green")
+			return True
+		try:
+			shutil.rmtree(buildpath)
+		except Exception as e:
+			click.secho(f"error removing install directory: {str(e)}")
+			return False
+		return True
 
-	def _remove_containers(self):		
-		pass
 
-	def _destroy(self, remove_build=False, remove_containers=False):
-		if remove_build:
-			self._remove_build()
-		if remove_containers:
-			self._remove_containers()
-		self._config.remove_build(self._name)
+	def _remove_containers(self) -> bool:
+		imgs: List[ContainerImage] = Containers.find_build_images(self._name)
+		imgs = sorted(imgs, key=lambda img: img._created, reverse=True)
+		for img in imgs:
+			if not Containers.rm_image(img):
+				return False
+		return True
+
+
+	def _destroy(self, remove_build=False, remove_containers=False) -> bool:
+
+		success = True
+		while True:
+			if remove_build:
+				if not self._remove_build():
+					success = False
+					break
+
+			if remove_containers:
+				if not self._remove_containers():
+					success = False
+					break
+			break
+		if not success:
+			return False
+		return self._config.remove_build(self._name)
+
 
 	@classmethod
 	def destroy(cls, config: Config, name: str,
 	            remove_build=False,
-	            remove_containers=False):
+	            remove_containers=False) -> bool:
 		build = Build(config, name)
-		build._destroy(remove_build, remove_containers)
+		return build._destroy(remove_build, remove_containers)
 
 
 	@classmethod

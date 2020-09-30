@@ -4,6 +4,7 @@ import shlex
 import json
 import re
 from typing import List, Tuple, Optional
+from datetime import datetime as dt
 
 
 # from
@@ -15,6 +16,14 @@ def sizeof_fmt(num, suffix='B'):
 			return "%3.1f%s%s" % (num, unit, suffix)
 		num /= 1024.0
 	return "%.1f%s%s" % (num, 'Yi', suffix)
+
+
+def parse_datetime(datestr: str) -> dt:
+	# podman returns timestamps that python has a hard time handling.
+	# make it easier by discarding some precision.
+	ts = datestr.split('.')
+	return dt.fromisoformat(ts[0])
+
 
 class ContainerImageName:
 	_remote: str
@@ -46,13 +55,15 @@ class ContainerImage:
 	_names: List[ContainerImageName]
 	_tags: List[str]
 	_size: float
+	_created: dt
 
 	def __init__(self, hashid: str,
-	             names: List[ContainerImageName], size: int):
+	             names: List[ContainerImageName], size: int, created: dt):
 		self._hashid: str = hashid[:12]
 		self._names: List[ContainerImageName] = names
 		self._tags: List[str] = self._get_tags()
 		self._size: float = size
+		self._created: dt = created
 
 
 	def _get_tags(self):
@@ -75,6 +86,7 @@ class ContainerImage:
 			            sizeof_fmt(self._size), latest))
 		for name in self._names:
 			print("{} {}".format(click.style("  - name:", fg="cyan"), name))
+		print("{} {}".format(click.style("  - created:", fg="cyan"), self._created))
 
 
 	def __str__(self) -> str:
@@ -96,6 +108,19 @@ class ContainerImage:
 	
 	def get_size_str(self) -> str:
 		return sizeof_fmt(self._size)
+
+
+	@property
+	def created(self) -> dt:
+		return self._created
+
+	@property
+	def names(self) -> List[str]:
+		return self._names
+
+	@property
+	def hashid(self) -> str:
+		return self._hashid
 
 
 class Containers:
@@ -180,7 +205,9 @@ class Containers:
 					# print(f"img does not match: ")
 					continue
 				names.append(img_name)
-			imgs.append(ContainerImage(image_id, names, image_entry['Size']))
+			img_created: dt =  parse_datetime(image_entry['CreatedAt'])
+			img_size = image_entry['Size']
+			imgs.append(ContainerImage(image_id, names, img_size, img_created))
 		return imgs
 
 	@classmethod
@@ -209,6 +236,26 @@ class Containers:
 		cmd = f"podman run -it {latest._hashid} /bin/bash"
 		subprocess.run(shlex.split(cmd))		
 		return True
+
+
+	@classmethod
+	def rm_image(cls, image: ContainerImage) -> bool:
+		success = True
+		click.secho(f"=> remove image id {image.hashid}", fg="yellow")
+		name: str
+		cmd = "podman rmi {imgname}"
+		for name in image.names:
+			click.secho(f"  - remove {name}", fg="yellow")
+			cmdlst = shlex.split(cmd.format(imgname=name))
+			proc = subprocess.run(cmdlst,
+			         stdout=subprocess.PIPE,
+					 stderr=subprocess.PIPE)
+			if proc.returncode != 0:
+				click.secho(f"error removing container image {name}", fg="red")
+				click.secho(proc.stderr.decode("utf-8"), fg="red")
+				success = False
+				continue
+		return success
 
 
 	@classmethod

@@ -215,10 +215,15 @@ def destroy(buildname: str):
 	                             default=False)
 	remove_containers = click.confirm(f"Do you want to remove the containers?",
 	                                  default=False)
-	Build.destroy(config, buildname,
+	success: bool = \
+		Build.destroy(config, buildname,
 	              remove_build=remove_build,
 	              remove_containers=remove_containers)
-	print(f"destroyed build '{buildname}'")
+
+	if not success:
+		click.secho(f"error destroying build '{buildname}'; aborted.", fg="red")
+	else:
+		click.secho(f"destroyed build '{buildname}'", fg="cyan")
 	
 
 
