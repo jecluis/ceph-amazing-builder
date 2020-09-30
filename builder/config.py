@@ -16,7 +16,7 @@ class Config:
 	_has_config: bool = False
 
 	_ccache_dir: Path = None
-	_builds_dir: Path = None
+	_installs_dir: Path = None
 
 	_ccache_default_size: str = None
 
@@ -52,12 +52,12 @@ class Config:
 				self._ccache_dir = Path(ccache_config['path'])
 			if 'size' in global_config:
 				self._ccache_default_size = ccache_config['size']
-		if 'builds' in global_config:
-			builds_config = global_config['builds']
-			if 'path' in builds_config:
-				self._builds_dir = Path(builds_config['path'])
+		if 'installs' in global_config:
+			installs_config = global_config['installs']
+			if 'path' in installs_config:
+				self._installs_dir = Path(installs_config['path'])
 		
-		if not self._builds_dir:
+		if not self._installs_dir:
 			return False
 		return True
 
@@ -74,8 +74,8 @@ class Config:
 	def get_ccache_dir(self) -> Path:
 		return self._ccache_dir
 	
-	def get_builds_dir(self) -> Path:
-		return self._builds_dir
+	def get_installs_dir(self) -> Path:
+		return self._installs_dir
 
 	def get_ccache_size(self) -> int:
 		return self._ccache_default_size
@@ -83,8 +83,8 @@ class Config:
 	def set_ccache_dir(self, ccache_str: str):
 		self._ccache_dir = Path(ccache_str).expanduser()
 
-	def set_builds_dir(self, builds_dir: str):
-		self._builds_dir = Path(builds_dir).expanduser()
+	def set_installs_dir(self, installs_dir: str):
+		self._installs_dir = Path(installs_dir).expanduser()
 
 	
 	def _write_config(self):
@@ -95,8 +95,8 @@ class Config:
 				'ccache': {
 					'path': str(self._ccache_dir)
 				},
-				'builds': {
-					'path': str(self._builds_dir)
+				'installs': {
+					'path': str(self._installs_dir)
 				}
 			}
 		}
@@ -150,5 +150,5 @@ class Config:
 
 
 	def print(self):
-		print(f"ccache directory: {self.get_ccache_dir()}")
-		print(f"builds directory: {self.get_builds_dir()}")
+		print(f"  ccache directory: {self.get_ccache_dir()}")
+		print(f"installs directory: {self.get_installs_dir()}")

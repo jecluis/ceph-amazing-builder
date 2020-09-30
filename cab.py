@@ -53,29 +53,33 @@ def init():
 	config_path = config.get_config_path()
 	
 	while True:
-		builds_dir = _prompt_directory("builds directory")			
+		installs_dir = _prompt_directory("installs directory")			
 		if click.confirm(
 			click.style("Use ccache to speed up builds?", fg="green"),
 			default=True):
 			ccache_dir = _prompt_directory("ccache directory")			
 
-		tlen = max(len(builds_dir), len(ccache_dir), len(config_path))+18
-		t = "-"*tlen
-		print(t)
-		print(
-f"""
-     config path: {config_path}
-builds directory: {builds_dir}
-ccache directory: {ccache_dir}
-""")
-		print(t)
+		tbl = [
+			("       config path", config_path),
+			("installs directory", installs_dir),
+			("  ccache directory", ccache_dir)
+		]
+		tlen = len(max([x for x, _ in tbl], key=len))
+		tlen += 2 # ': '
+		tlen += len(max([x for _, x in tbl], key=len))	
+		click.secho('{}'.format('-'*tlen), fg="cyan")
+		for a, b in tbl:
+			print("{} {}".format(click.style(f"{a}:", fg="cyan"), b))
+		click.secho('{}'.format('-'*tlen), fg="cyan")
+
+
 		if click.confirm(
 			click.style("Is this okay?", fg="green"),
 			default=True):
 			break
 
 	config.set_ccache_dir(ccache_dir)
-	config.set_builds_dir(builds_dir)
+	config.set_installs_dir(installs_dir)
 	config.commit()
 	print("configuration saved.")
 
@@ -141,11 +145,11 @@ def create(buildname: str, vendor: str, release: str, sourcedir: str):
 	help="build with tests (increases build size)")
 @click.option('--with-fresh-build', default=False, is_flag=True,
 	help="cleans the source repository before building")
-@click.option('--nuke-build', default=False, is_flag=True,
-	help="destroys the output build directory before building")
+@click.option('--nuke-install', default=False, is_flag=True,
+	help="destroys the install directory before building")
 def build(
     buildname: str,
-    nuke_build: bool,
+    nuke_install: bool,
     with_debug: bool,
     with_tests: bool,
 	with_fresh_build: bool
@@ -166,7 +170,7 @@ def build(
 		click.secho(f"error: build '{buildname}' does not exist.", fg="red")
 		sys.exit(errno.ENOENT)
 
-	if nuke_build:
+	if nuke_install:
 		sure = click.confirm(
 		    click.style(
 		        "Are you sure you want to remove the install directory?",
@@ -186,7 +190,7 @@ def build(
 		if not sure:
 			sys.exit(1)
 
-	Build.build(config, buildname, nuke_build=nuke_build,
+	Build.build(config, buildname, nuke_install=nuke_install,
 	            with_debug=with_debug, with_tests=with_tests,
 	            with_fresh_build=with_fresh_build)
 
@@ -217,7 +221,7 @@ def destroy(buildname: str):
 	                                  default=False)
 	success: bool = \
 		Build.destroy(config, buildname,
-	              remove_build=remove_build,
+	              remove_install=remove_build,
 	              remove_containers=remove_containers)
 
 	if not success:

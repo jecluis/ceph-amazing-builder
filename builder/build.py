@@ -65,9 +65,12 @@ class Build:
 		config.write_build_config(name, conf_dict)
 		return Build(config, name)
 
-	def get_build_dir(self) -> str:
-		builds = self._config.get_builds_dir()
-		return str(builds.joinpath(self._name))
+	def get_install_path(self) -> Path:
+		installs = self._config.get_installs_dir()
+		return installs.joinpath(self._name)
+
+	def get_install_dir(self) -> str:
+		return str(self.get_install_path())
 
 	def get_sources_dir(self) -> str:
 		return self._sources
@@ -78,7 +81,7 @@ class Build:
 			("   - ", "vendor:", self._vendor),
 			("   - ", "release:", self._release),
 			("   - ", "sourcedir:", self._sources),
-			("   - ", "build dir:", self.get_build_dir())
+			("   - ", "install dir:", self.get_install_dir())
 		]
 		for p, k, v in lst:
 			s = "{}{}".format((p if with_prefix else ""), k)			
@@ -87,16 +90,15 @@ class Build:
 				break
 
 
-	def _remove_build(self) -> bool:
-		builds_dir = self._config.get_builds_dir()
-		buildpath = builds_dir.joinpath(self._name)
+	def _remove_install(self) -> bool:
+		installpath = self.get_install_path()
 		click.secho(
-			f"=> remove install directory at {buildpath}", fg="yellow")
-		if not buildpath.exists() or not buildpath.is_dir():
+			f"=> remove install directory at {installpath}", fg="yellow")
+		if not installpath.exists() or not installpath.is_dir():
 			click.secho("  - build path not found", fg="green")
 			return True
 		try:
-			shutil.rmtree(buildpath)
+			shutil.rmtree(installpath)
 		except Exception as e:
 			click.secho(f"error removing install directory: {str(e)}")
 			return False
@@ -112,12 +114,12 @@ class Build:
 		return True
 
 
-	def _destroy(self, remove_build=False, remove_containers=False) -> bool:
+	def _destroy(self, remove_install=False, remove_containers=False) -> bool:
 
 		success = True
 		while True:
-			if remove_build:
-				if not self._remove_build():
+			if remove_install:
+				if not self._remove_install():
 					success = False
 					break
 
@@ -133,14 +135,14 @@ class Build:
 
 	@classmethod
 	def destroy(cls, config: Config, name: str,
-	            remove_build=False,
+	            remove_install=False,
 	            remove_containers=False) -> bool:
 		build = Build(config, name)
-		return build._destroy(remove_build, remove_containers)
+		return build._destroy(remove_install, remove_containers)
 
 
 	@classmethod
-	def build(cls, config: Config, name: str, nuke_build=False,
+	def build(cls, config: Config, name: str, nuke_install=False,
 	          with_debug=False, with_tests=False,
 	          with_fresh_build=False):
 		if not config.build_exists(name):
@@ -148,7 +150,7 @@ class Build:
 		build = Build(config, name)
 
 		# nuke an existing build install directory; force reinstall.
-		if nuke_build:
+		if nuke_install:
 			install_path: Path = \
 				config.get_builds_dir().joinpath(build._name)
 			click.secho(
@@ -166,7 +168,7 @@ class Build:
 	           with_fresh_build=False):
 
 		ccache_path: Path = None
-		build_path: Path = None
+		install_path: Path = None
 		base_build_image: str = None
 
 		# prepare ccache
@@ -183,8 +185,8 @@ class Build:
 				)
 		
 		# prepare output build directory
-		build_path = self._config.get_builds_dir().joinpath(self._name)
-		build_path.mkdir(exist_ok=True)
+		install_path = self.get_install_path()
+		install_path.mkdir(exist_ok=True)
 
 		# check whether a previous build image exists (i.e., we're going to be
 		# an incremental build), or if we are the first (in which case we need
@@ -198,17 +200,17 @@ class Build:
 				raise NoAvailableImageError("missing release image")
 	
 		if do_build:
-			if not self._perform_build(build_path, ccache_path,
+			if not self._perform_build(install_path, ccache_path,
 			                           with_debug, with_tests,
 	                                   with_fresh_build):
 				raise BuildError()
 
 		if do_container:
-			if not self._build_container(build_path, base_build_image):
+			if not self._build_container(install_path, base_build_image):
 				raise ContainerBuildError()
 
 
-	def _perform_build(self, build_path: Path, ccache_path: Path,
+	def _perform_build(self, install_path: Path, ccache_path: Path,
 	                   with_debug: bool, with_tests: bool,
 	                   with_fresh_build: bool
 	) -> bool:
@@ -218,7 +220,7 @@ class Build:
 			based on a given release, against the build's sources, and finally
 			installing the binaries into the build's build path.
 
-			build_path is the location of the directory where our final build
+			install_path is the location of the directory where our final build
 			will live.
 
 			ccache_path is the location for the vendor/release ccache.
@@ -234,7 +236,7 @@ class Build:
 		cprint("      vendor", self._vendor)
 		cprint("     release", self._release)
 		cprint("sources path", self._sources)
-		cprint("  build path", build_path)
+		cprint("install path", install_path)
 		cprint(" ccache path", ccache_path)
 		cprint("  with debug", with_debug)
 		cprint("  with tests", with_tests)
@@ -258,7 +260,7 @@ class Build:
 		cmd = f"podman run -it --userns=keep-id " \
 			  f"-v {bindir}:/build/bin " \
 			  f"-v {self._sources}:/build/src " \
-			  f"-v {str(build_path)}:/build/out"
+			  f"-v {str(install_path)}:/build/out"
 		
 		if ccache_path is not None:
 			cmd += f" -v {str(ccache_path)}:/build/ccache"
@@ -299,12 +301,12 @@ class Build:
 
 
 	def _build_container(self,
-	                     build_path: Path,
+	                     install_path: Path,
 						 base_image: str
 	) -> bool:
 
 		click.secho("==> building container", fg="cyan")
-		cprint("from build path", build_path)
+		cprint("from build path", install_path)
 		cprint("       based on", base_image)
 
 		# create working container (this is where our binaries will end up at).
@@ -332,7 +334,7 @@ class Build:
 		# transfer binaries.		
 		cmd = f"rsync --info=stats --update --recursive --links --perms "\
 			  f"--group --owner --times "\
-			  f"{str(build_path)}/ {str(mnt_path)}"		
+			  f"{str(install_path)}/ {str(mnt_path)}"		
 		ret, _, stderr = self._run_cmd(cmd)
 		if ret != 0:
 			raise ContainerBuildError("{}: {}".format(os.strerror(ret), stderr))
