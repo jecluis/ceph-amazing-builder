@@ -89,6 +89,14 @@ class ContainerImage:
 		return None
 
 
+	@property
+	def size(self) -> int:
+		return self._size
+
+	
+	def get_size_str(self) -> str:
+		return sizeof_fmt(self._size)
+
 
 class Containers:
 	def __init__(self):

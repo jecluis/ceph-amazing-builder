@@ -165,11 +165,7 @@ class Build:
 			if not base_build_image:
 				# we have no images to base our image on.
 				raise NoAvailableImageError("missing release image")
-
-		cprint("ccache path", ccache_path)
-		cprint(" build path", build_path)
-		cprint(" base image", str(base_build_image))
-		
+	
 		if do_build:
 			if not self._perform_build(build_path, ccache_path,
 			                           with_debug, with_tests):
@@ -200,6 +196,16 @@ class Build:
 			with_tests will instruct the build script to build the tests.
 			
 		"""
+
+		click.secho("==> building sources", fg="cyan")
+		cprint("      vendor", self._vendor)
+		cprint("     release", self._release)
+		cprint("sources path", self._sources)
+		cprint("  build path", build_path)
+		cprint(" ccache path", ccache_path)
+		cprint("  with debug", with_debug)
+		cprint("  with tests", with_tests)
+
 
 		build_image = \
 			Containers.find_base_build_image(self._vendor, self._release)
@@ -261,6 +267,10 @@ class Build:
 	                     build_path: Path,
 						 base_image: str
 	) -> bool:
+
+		click.secho("==> building container", fg="cyan")
+		cprint("from build path", build_path)
+		cprint("       based on", base_image)
 
 		# create working container (this is where our binaries will end up at).
 		#
@@ -326,10 +336,14 @@ class Build:
 		if ret != 0:
 			raise ContainerBuildError("{}: {}".format(os.strerror(ret), result))
 
-		print("{}: {} ({})".format(
+		new_container_img: ContainerImage = \
+			Containers.find_build_image_latest(self._name)
+
+		print("{}: {} ({}) {}".format(
 			click.style("built container", fg="green"),
 			container_final_image,
-			new_container_id[:12]))
+			new_container_id[:12],
+			new_container_img.get_size_str()))
 
 		return True
 
