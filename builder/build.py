@@ -86,12 +86,13 @@ class Build:
 			if not verbose:
 				break
 
+
 	def _remove_build(self):
 		builds_dir = self._config.get_builds_dir()
 		buildpath = builds_dir.joinpath(self._name)
 		if not buildpath.exists() or not buildpath.is_dir():
 			return
-		buildpath.rmdir()
+		shutil.rmtree(buildpath)
 
 	def _remove_containers(self):		
 		pass
