@@ -99,3 +99,6 @@ popd
 
 bash /build/out/post-make-install.sh || exit 1
 rm /build/out/post-make-install.sh
+
+/build/bin/parse-spec-post-install.sh \
+    /build/src/ceph.spec.builder > /build/out/post-install.sh
