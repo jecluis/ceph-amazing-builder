@@ -22,8 +22,6 @@ config = Config()
 
 @click.group()
 def cli():
-	# print(f"config path: {config._config_dir}")
-	# print(f"has config? {config.has_config()}")
 	pass
 
 
