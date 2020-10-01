@@ -12,7 +12,9 @@ from typing import Dict, Any, Tuple, Optional, List
 from builder.config import Config
 from builder.build import Build
 from builder.containers import ContainerImage, Containers
-from builder.utils import print_table, serror, sokay, sinfo, pokay, perror
+from builder.utils import print_table, \
+	serror, sokay, swarn, sinfo, \
+	pinfo, pokay, perror
 
 
 config = Config()
@@ -97,69 +99,62 @@ def create(buildname: str, vendor: str, release: str, sourcedir: str,
 	SOURCEDIR is the directory where sources for this build are expected.\n
 	"""
 	if config.build_exists(buildname):
-		click.secho(f"build '{buildname}' already exists.", fg="red")
+		perror(f"build '{buildname}' already exists.")
 		sys.exit(errno.EEXIST)
 
 	# check whether a build image for <vendor>:<release> exists
 
 	img, img_id = Containers.find_release_base_image(vendor, release)
 	if not img or not img_id:
-		click.secho(
+		perror(
 			f"error: unable to find base image for vendor {vendor}" \
-			f" release {release}",
-			fg="red")
-		click.secho("please run image-build.sh")
+			f" release {release}")
+		perror("please run image-build.sh")
 		sys.exit(errno.ENOENT)
 
 	sourcepath: Path = Path(sourcedir).resolve()
 
 	if clone_from_repo is not None:
 		if len(clone_from_repo) == 0:
-			click.secho("error: valid git repository required.", fg="red")
+			perror("error: valid git repository required.")
 			sys.exit(errno.EINVAL)
 		
 		extra_opts = ""
 		if clone_from_branch is not None:
 			if len(clone_from_branch) == 0:
-				click.secho("error: valid branch required.", fg="red")
+				perror("error: valid branch required.")
 				sys.exit(errno.EINVAL)
 			extra_opts += f"-b {clone_from_branch}"
 
 		if sourcepath.exists():
-			click.secho(f"error: SOURCEDIR exists at {sourcepath}.", fg="red")
-			click.secho("can't clone to an existing directory", fg="red")
+			perror(f"error: SOURCEDIR exists at {sourcepath}.")
+			perror("can't clone to an existing directory")
 			sys.exit(errno.EEXIST)
 		
 		cmd = f"git clone {extra_opts} {clone_from_repo} {sourcedir}"
 		proc = subprocess.run(shlex.split(cmd))
 		if proc.returncode != 0:
-			click.secho(f"error: unable to clone repository")
+			perror(f"error: unable to clone repository")
 			sys.exit(proc.returncode)
 
 	elif clone_from_branch is not None:
-		click.secho(
-			"error: --clone-from-branch requires --clone-from-repo", fg="red")
+		perror("error: --clone-from-branch requires --clone-from-repo")
 		sys.exit(errno.EINVAL)
 
 	# check whether sourcedir is a ceph repository
 	if not sourcepath.exists() or not sourcepath.is_dir():
-		click.secho(
-			f"error: sourcedir expected to exist as a directory",
-		    fg="red")
+		perror(f"error: sourcedir expected to exist as a directory")
 		sys.exit(errno.ENOTDIR)
 	
 	specfile = sourcepath.joinpath('ceph.spec.in')
 	if not specfile.exists():
-		click.secho(
-			f"error: sourcedir is not a ceph git source tree",
-			fg="red"
-		)
+		perror(f"error: sourcedir is not a ceph git source tree")
 		sys.exit(errno.EINVAL)
 	
 	build = Build.create(config, buildname, vendor, release, sourcedir,
 	                     with_debug=with_debug, with_tests=with_tests)
 	build.print()
-	click.secho(f"created build '{buildname}'", fg="green")
+	pokay(f"created build '{buildname}'")
 
 
 
@@ -183,14 +178,12 @@ def build(
 
 	"""
 	if not config.build_exists(buildname):
-		click.secho(f"error: build '{buildname}' does not exist.", fg="red")
+		perror(f"error: build '{buildname}' does not exist.")
 		sys.exit(errno.ENOENT)
 
 	if nuke_install:
 		sure = click.confirm(
-		    click.style(
-		        "Are you sure you want to remove the install directory?",
-		        fg="red"),
+			swarn("Are you sure you want to remove the install directory?"),
 		    default=False
 		)
 		if not sure:
@@ -198,9 +191,7 @@ def build(
 
 	if with_fresh_build:
 		sure = click.confirm(
-		    click.style(
-		        "Are you sure you want to run a fresh build?",
-			    fg="red"),
+		    swarn("Are you sure you want to run a fresh build?"),
 		    default=False
 		)
 		if not sure:
@@ -223,26 +214,29 @@ def destroy(buildname: str):
 	"""
 
 	if not config.build_exists(buildname):
-		click.secho(f"build '{buildname}' does not exist")
+		pinfo(f"build '{buildname}' does not exist")
 		sys.exit(errno.ENOENT)
 
-	if not click.confirm(f"Are you sure you want to remove build '{buildname}?",
-	                     default=False):
+	if not click.confirm(
+	        swarn(f"Are you sure you want to remove build '{buildname}?"),
+	        default=False):
 		sys.exit(0)
 
-	remove_build = click.confirm(f"Do you want to remove the build directory?",
-	                             default=False)
-	remove_containers = click.confirm(f"Do you want to remove the containers?",
-	                                  default=False)
+	remove_build = click.confirm(
+	    swarn(f"Do you want to remove the build directory?"),
+	    default=False)
+	remove_containers = click.confirm(
+	    swarn(f"Do you want to remove the containers?"),
+	    default=False)
 	success: bool = \
 		Build.destroy(config, buildname,
 	              remove_install=remove_build,
 	              remove_containers=remove_containers)
 
 	if not success:
-		click.secho(f"error destroying build '{buildname}'; aborted.", fg="red")
+		perror(f"error destroying build '{buildname}'; aborted.")
 	else:
-		click.secho(f"destroyed build '{buildname}'", fg="cyan")
+		pinfo(f"destroyed build '{buildname}'")
 	
 
 
@@ -259,12 +253,12 @@ def list_builds(verbose: bool):
 @click.argument('buildname', type=click.STRING)
 def list_build_images(buildname: str):
 	if not config.build_exists(buildname):
-		click.secho(f"build '{buildname}' does not exist.", fg="red")
+		perror(f"build '{buildname}' does not exist.")
 		sys.exit(errno.ENOENT)
 	
 	images: List[ContainerImage] = Containers.find_build_images(buildname)
 	if len(images) == 0:
-		click.secho(f"no images for build '{buildname}'", fg="red")
+		perror(f"no images for build '{buildname}'")
 		sys.exit(0)
 	
 	img: ContainerImage
@@ -280,11 +274,11 @@ def shell(buildname: str):
 	BUILDNAME is the name of the build for which we want a shell.
 	"""
 	if not config.build_exists(buildname):
-		click.secho(f"build '{buildname}' does not exist.", fg="red")
+		perror(f"build '{buildname}' does not exist.")
 		sys.exit(errno.ENOENT)
 
 	if not Containers.run_shell(buildname):
-		click.secho(f"unable to run shell for build '{buildname}'", fg="red")
+		perror(f"unable to run shell for build '{buildname}'")
 		sys.exit(errno.EINVAL)
 
 

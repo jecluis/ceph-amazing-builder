@@ -8,7 +8,7 @@ from pathlib import Path
 from datetime import datetime as dt
 from .config import Config, UnknownBuildError
 from .containers import Containers, ContainerImage
-from .utils import print_tree, print_table
+from .utils import print_tree, print_table, pwarn
 from typing import Tuple, List
 
 
@@ -117,9 +117,7 @@ class Build:
 
 
 	def _remove_install(self) -> bool:
-		installpath = self.get_install_path()
-		click.secho(
-			f"=> remove install directory at {installpath}", fg="yellow")
+		installpath = self.get_install_path()		
 		if not installpath.exists() or not installpath.is_dir():
 			click.secho("  - build path not found", fg="green")
 			return True
@@ -145,11 +143,14 @@ class Build:
 		success = True
 		while True:
 			if remove_install:
+				installpath = self.get_install_path()
+				pwarn(f"=> remove install directory at {installpath}")
 				if not self._remove_install():
 					success = False
 					break
 
 			if remove_containers:
+				pwarn(f"=> remove container images")
 				if not self._remove_containers():
 					success = False
 					break
