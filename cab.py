@@ -12,7 +12,7 @@ from typing import Dict, Any, Tuple, Optional, List
 from builder.config import Config
 from builder.build import Build
 from builder.containers import ContainerImage, Containers
-
+from builder.utils import print_table, serror, sokay, sinfo, pokay, perror
 
 
 config = Config()
@@ -28,13 +28,10 @@ def cli():
 def _prompt_directory(prompt_text: str) -> str:
 	path = None
 	while True:
-		pathstr = click.prompt(
-			click.style(prompt_text, fg="cyan"),
-			type=str, default=None)
+		pathstr = click.prompt(sinfo(prompt_text), type=str, default=None)
 		path = Path(pathstr).absolute()
 		if not path.exists() or not path.is_dir():
-			click.secho("error: path does not exist or is not a directory.",
-			            fg="red")
+			perror("error: path does not exist or is not a directory.")
 			continue
 		break
 	return str(path)
@@ -46,42 +43,31 @@ def init():
 
 	if config.has_config() and \
 	   not click.confirm(
-		   click.style("Configuration file already exists. Continue?",
-		   			   fg="red")):
+		   serror("Configuration file already exists. Continue?")):
 		return
 
 	config_path = config.get_config_path()
 	
 	while True:
 		installs_dir = _prompt_directory("installs directory")			
-		if click.confirm(
-			click.style("Use ccache to speed up builds?", fg="green"),
+		if click.confirm(sokay("Use ccache to speed up builds?"),
 			default=True):
 			ccache_dir = _prompt_directory("ccache directory")			
 
 		tbl = [
-			("       config path", config_path),
+			("config path", config_path),
 			("installs directory", installs_dir),
-			("  ccache directory", ccache_dir)
+			("ccache directory", ccache_dir)
 		]
-		tlen = len(max([x for x, _ in tbl], key=len))
-		tlen += 2 # ': '
-		tlen += len(max([x for _, x in tbl], key=len))	
-		click.secho('{}'.format('-'*tlen), fg="cyan")
-		for a, b in tbl:
-			print("{} {}".format(click.style(f"{a}:", fg="cyan"), b))
-		click.secho('{}'.format('-'*tlen), fg="cyan")
+		print_table(tbl, color="cyan")
 
-
-		if click.confirm(
-			click.style("Is this okay?", fg="green"),
-			default=True):
+		if click.confirm(sokay("Is this okay?"), default=True):
 			break
 
 	config.set_ccache_dir(ccache_dir)
 	config.set_installs_dir(installs_dir)
 	config.commit()
-	print("configuration saved.")
+	pokay("configuration saved.")
 
 
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from datetime import datetime as dt
 from .config import Config, UnknownBuildError
 from .containers import Containers, ContainerImage
+from .utils import print_tree, print_table
 from typing import Tuple, List
 
 
@@ -100,21 +101,19 @@ class Build:
 		return self._sources
 
 	def print(self, with_prefix=False, verbose=False):
-		lst = [
-			("- ", "buildname:", self._name),
-			("   - ", "vendor:", self._vendor),
-			("   - ", "release:", self._release),
-			("   - ", "sourcedir:", self._sources),
-			("   - ", "install dir:", self.get_install_dir()),
-			("   - ", "build:", ""),
-			("      - ", "with debug:", self.with_debug),
-			("      - ", "with tests:", self.with_tests)
+		tree = [
+			('buildname', self._name, [
+				('vendor', self._vendor),
+				('release', self._release),
+				('sources', self._sources),
+				('install', self.get_install_dir()),
+				('build', '', [
+					('with debug', self.with_debug),
+					('with tests', self.with_tests)
+				])
+			])
 		]
-		for p, k, v in lst:
-			s = "{}{}".format((p if with_prefix else ""), k)			
-			print("{} {}".format(click.style(s, fg="cyan"), v))
-			if not verbose:
-				break
+		print_tree(tree)
 
 
 	def _remove_install(self) -> bool:
@@ -255,13 +254,16 @@ class Build:
 		"""
 
 		click.secho("==> building sources", fg="cyan")
-		cprint("      vendor", self._vendor)
-		cprint("     release", self._release)
-		cprint("sources path", self._sources)
-		cprint("install path", install_path)
-		cprint(" ccache path", ccache_path)
-		cprint("  with debug", self.with_debug)
-		cprint("  with tests", self.with_tests)
+		tbl = [
+			("vendor", self._vendor),
+			("release", self._release),
+			("sources path", self._sources),
+			("install path", install_path),
+			("ccache path", ccache_path),
+			("with debug", self._with_debug),
+			("with tests", self._with_tests)
+		]
+		print_table(tbl, color="cyan")
 
 
 		build_image = \
@@ -328,9 +330,11 @@ class Build:
 	) -> bool:
 
 		click.secho("==> building container", fg="cyan")
-		cprint("from build path", install_path)
-		cprint("       based on", base_image)
-
+		print_table([
+			("from build path", install_path),
+			("based on", base_image)
+		], color="cyan")
+		
 		# create working container (this is where our binaries will end up at).
 		#
 		ret, result = self._run_buildah(f"from {base_image}")
