@@ -81,7 +81,10 @@ class Config:
 		return self._ccache_default_size
 
 	def set_ccache_dir(self, ccache_str: str):
-		self._ccache_dir = Path(ccache_str).expanduser()
+		if not ccache_str:
+			self._ccache_dir = None
+		else:
+			self._ccache_dir = Path(ccache_str).expanduser()
 
 	def set_installs_dir(self, installs_dir: str):
 		self._installs_dir = Path(installs_dir).expanduser()
@@ -92,14 +95,15 @@ class Config:
 		config_file = 'config.yaml'
 		d = {
 			'global': {
-				'ccache': {
-					'path': str(self._ccache_dir)
-				},
 				'installs': {
 					'path': str(self._installs_dir)
 				}
 			}
 		}
+		if self._ccache_dir:
+			d['global']['ccache'] = {
+				'path': str(self._ccache_dir)
+			}
 		path = self._config_dir.joinpath(config_file)
 		self._write_config_file(d, path)
 

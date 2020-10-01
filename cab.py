@@ -25,17 +25,35 @@ def cli():
 	pass
 
 
-def _prompt_directory(prompt_text: str) -> str:
+def _prompt_directory(prompt_text: str, must_exist=True) -> Path:
 	path = None
 	while True:
 		pathstr = click.prompt(sinfo(prompt_text), type=str, default=None)
 		path = Path(pathstr).absolute()
-		if not path.exists() or not path.is_dir():
-			perror("error: path does not exist or is not a directory.")
+		if must_exist and not path.exists():
+			perror("error: path must exist")
+			continue
+
+		if path.exists() and not path.is_dir():
+			perror("error: path is not a directory.")
 			continue
 		break
-	return str(path)
+	return path
 
+
+def _init_tree() -> Tuple[Path, Path]:
+	tree_root_dir = _prompt_directory("Builder tree directory",
+	                                  must_exist=False)
+	if not tree_root_dir:
+		perror("Must specify a directory")
+		sys.exit(errno.EINVAL)
+
+	tree_path = Path(tree_root_dir)
+	installs_path = tree_path.joinpath("installs")
+	ccache_path = tree_path.joinpath("ccache")
+
+	return (installs_path, ccache_path)
+	
 
 @click.command()
 def init():
@@ -49,23 +67,40 @@ def init():
 	config_path = config.get_config_path()
 	
 	while True:
-		installs_dir = _prompt_directory("installs directory")			
-		if click.confirm(sokay("Use ccache to speed up builds?"),
-			default=True):
-			ccache_dir = _prompt_directory("ccache directory")			
+
+		predefined_tree = click.confirm(
+			sinfo("Do you want 'init' to create the builder tree for you?"),
+			default=True
+		)
+
+		installs_path: Path = None
+		ccache_path: Path = None
+		create_tree = False
+		if predefined_tree:
+			installs_path, ccache_path = _init_tree()
+			create_tree = True
+		else:
+			installs_path = _prompt_directory("installs directory")
+			if click.confirm(sokay("Use ccache to speed up builds?"),
+			                 default=True):
+				ccache_path = _prompt_directory("ccache directory")
 
 		tbl = [
 			("config path", config_path),
-			("installs directory", installs_dir),
-			("ccache directory", ccache_dir)
+			("installs directory", installs_path),
+			("ccache directory", ccache_path)
 		]
 		print_table(tbl, color="cyan")
 
 		if click.confirm(sokay("Is this okay?"), default=True):
 			break
 
-	config.set_ccache_dir(ccache_dir)
-	config.set_installs_dir(installs_dir)
+	if create_tree:
+		installs_path.mkdir(exist_ok=True, parents=True)
+		ccache_path.mkdir(exist_ok=True, parents=True)
+
+	config.set_ccache_dir(str(ccache_path))
+	config.set_installs_dir(str(installs_path))
 	config.commit()
 	pokay("configuration saved.")
 
