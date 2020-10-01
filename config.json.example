@@ -1,4 +1,0 @@
-{
-	"build_root": "/path/to/builds/output",
-	"ccache_root": "/path/to/builds/ccache"
-}
