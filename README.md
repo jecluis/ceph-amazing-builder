@@ -103,16 +103,16 @@ container images with these parameters.
 E.g.,
 
 ```
-	$ cab create ses7 suse ses7 /srv/containers/builder/sources/suse-ses7
-	- buildname: ses7
-   		- vendor: suse
-   		- release: ses7
-   		- sources: /srv/containers/builder/sources/ses7
-   		- install: /srv/containers/builder/installs/ses7
-   		- build: 
-    		- with debug: False
-    		- with tests: False
-	created build 'ses7'
+    $ cab create ses7 suse ses7 /srv/containers/builder/sources/suse-ses7
+    - buildname: ses7
+    - vendor: suse
+    - release: ses7
+    - sources: /srv/containers/builder/sources/ses7
+    - install: /srv/containers/builder/installs/ses7
+    - build: 
+        - with debug: False
+        - with tests: False
+    created build 'ses7'
 ```
 
 Note the two build parameters at the bottom: `with debug` and `with tests`.
