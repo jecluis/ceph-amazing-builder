@@ -214,3 +214,46 @@ buildah's working containers still being around.
 miserably. Additionally, seems it might need quite a lot of space for the
 humongous images.
 
+
+setting up a local registry
+===========================
+
+While we don't automatically do at time of writing, we intend to automate
+pushing images to a user-specified, local or remote, registry. In the mean time,
+it might be useful to setup a local, insecure registry.
+
+The simplest way we know to achieve this is to run `registry:2` image. During
+our development, we have used the following to set it up:
+
+```
+podman run -d --name registry \
+  -e REGISTRY_HTTP_ADDR=0.0.0.0:5000 \
+  --net=host \
+  -v /srv/containers/data/registry:/var/lib/registry \
+  --restart=always \
+  registry:2
+```
+
+with sesdev
+===========
+
+`sesdev` is able to consume images from arbitrary registries. This is relevant
+because we want our images to be deployed by `sesdev`. However, to make this
+happen we need to push our images to a registry that `sesdev` is able to
+consume.
+
+Unfortunately for us, `podman` expects registries to be run with HTTPS, and
+although it supports consuming from insecure registries (via
+`--tls-verify=false`), `sesdev` does not explicitly allow this. We have thus to
+force the deployed machines to be able to consume insecure registries, and that
+can be achieved through `ceph-salt`:
+
+Basically, on `sesdev`, at
+`seslib/templates/salt/ceph-salt/deployment_day_1.sh.j2`, we need to add a line
+similar to the following, substituting where needed:
+
+`ceph-salt config /containers/registries_conf/registries add location=<localip>:5000 insecure=true`
+
+This will, at least, allow us to deploy a `sesdev` cluster passing an
+`--image-path` to our registry and image, which should then be successfully
+deployed.
