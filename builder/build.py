@@ -361,7 +361,7 @@ class Build:
 		# transfer binaries.		
 		cmd = f"rsync --info=stats --update --recursive --links --perms "\
 			  f"--group --owner --times "\
-			  f"{str(install_path)}/ {str(mnt_path)}"		
+			  f"{str(install_path)}/ {str(mnt_path)}"
 		ret, _, stderr = self._run_cmd(cmd)
 		if ret != 0:
 			raise ContainerBuildError("{}: {}".format(os.strerror(ret), stderr))
