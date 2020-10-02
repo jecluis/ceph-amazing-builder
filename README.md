@@ -20,6 +20,39 @@ What we do
 * create a new build image, or an incremental image based on an existing image.
 
 
+What we don't do
+================
+
+* be very smart.
+
+In a nutshell, building Ceph from sources into a medium is expected to be
+performed, essentially, through `make-dist` -- which may then be consumed by
+rpmbuild using the spec file.
+
+We don't run `make-dist`, even though we parse the spec file significantly to
+automate some of our steps. We also don't rely on `rpmbuild` to build rpms, and
+choose to build all from source.
+
+One of the most time consuming steps of building rpms is the dependency
+resolution -- we don't resolve dependencies, and pay the price for that too. We
+are able to know some of the dependencies from the spec file's `Requires`
+entries, but our experience tells us that is not enough; and we haven't been
+smart enough to unravel this mystery. Because of that, we have chosen to base
+our image on the build image, which has all the development dependencies and
+ensures the vast majority of requirements are present; those that are not are
+later on added based on the `Requires` entries.
+
+Additionally, there are several artifact that get installed onto the image that
+would otherwise not be installed. We are working to figure out proper ways to
+prevent them from being added, ideally without hardcoding conditions, but at
+time of writing that has not been achieved. A perfect example of this is the
+dashboard's frontend source directory; this adds about 700MB worth of node
+modules.
+
+In the end, we end up with an incredibly bloated image, roughly twice the size
+of a production, distribution released image; read, about 2GB vs 1GB.
+
+
 Setup
 =====
 
@@ -49,7 +82,7 @@ builds from the same base repository/branch will be shared.
 	$ cab init
    	Do you want 'init' to create the builder tree for you? [Y/n]: Y
 	Builder tree directory: /srv/containers/builder
-    	   config path: /home/joao/.config/cab/config.yaml
+           config path: /home/joao/.config/cab/config.yaml
 	installs directory: /srv/containers/builder/installs
   	  ccache directory: /srv/containers/builder/ccache
 	Is this okay? [Y/n]: Y
@@ -77,8 +110,8 @@ E.g.,
    		- sources: /srv/containers/builder/sources/ses7
    		- install: /srv/containers/builder/installs/ses7
    		- build: 
-      		- with debug: False
-      		- with tests: False
+    		- with debug: False
+    		- with tests: False
 	created build 'ses7'
 ```
 
