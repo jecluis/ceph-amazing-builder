@@ -6,6 +6,7 @@ import sys
 import subprocess
 import shlex
 import shutil
+import re
 from pathlib import Path
 from typing import Dict, Any, Tuple, Optional, List
 
@@ -14,7 +15,7 @@ from builder.build import Build
 from builder.containers import ContainerImage, Containers
 from builder.utils import print_table, \
 	serror, sokay, swarn, sinfo, \
-	pinfo, pokay, perror
+	pinfo, pokay, perror, pwarn
 
 
 config = Config()
@@ -39,6 +40,28 @@ def _prompt_directory(prompt_text: str, must_exist=True) -> Path:
 			continue
 		break
 	return path
+
+
+def _prompt_ccache_size() -> str:
+	ccache_size = None
+	while True:
+		ccache_size = click.prompt(
+		        sinfo("ccache size (in G, T)"), type=str, default="10G")
+		match = re.match(r'^[ ]*([0-9]+)[ ]*([GT])[ ]*$', ccache_size.upper())
+		if not match or len(match.groups()) != 2:
+			perror("invalid size format.")
+			continue
+		size = int(match.group(1))
+		unit = match.group(2)
+		if size <= 0:
+			perror("invalid value for size; must be greater than zero.")
+			continue
+		elif size < 2 and unit == 'G':
+			pwarn("size may be too small to cache one build.")
+		ccache_size = f"{size}{unit}"
+		break
+	return ccache_size
+		
 
 
 def _init_tree() -> Tuple[Path, Path]:
@@ -85,12 +108,20 @@ def init():
 			                 default=True):
 				ccache_path = _prompt_directory("ccache directory")
 
+
+		ccache_size = '10G' # default
+		if ccache_path:
+			ccache_size = _prompt_ccache_size()
+			assert ccache_size
+
+
 		tbl = [
 			("config path", config_path),
 			("installs directory", installs_path),
-			("ccache directory", ccache_path)
+			("ccache directory", ccache_path),
+			("ccache size", ccache_size)
 		]
-		print_table(tbl, color="cyan")
+		print_table(tbl, color="cyan")				
 
 		if click.confirm(sokay("Is this okay?"), default=True):
 			break
@@ -101,6 +132,7 @@ def init():
 
 	config.set_ccache_dir(str(ccache_path))
 	config.set_installs_dir(str(installs_path))
+	config.set_ccache_size(ccache_size)
 	config.commit()
 	pokay("configuration saved.")
 
