@@ -29,7 +29,7 @@ if $do_fresh_build ; then
 fi
 
 
-extra_args="-DCMAKE_COLOR_MAKEFILE=OFF"
+extra_args="-DCMAKE_COLOR_MAKEFILE=OFF -DWITH_MGR_DASHBOARD_FRONTEND=ON"
 
 if ! $do_with_tests ; then
   extra_args="$extra_args -DWITH_TESTS=OFF"
