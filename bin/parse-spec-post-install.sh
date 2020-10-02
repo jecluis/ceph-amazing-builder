@@ -76,3 +76,13 @@ for attr in $(rpmspec --parse ${specfile} | grep '^%attr' |
     sed 's/%attr(\(.*\)) \(.*\)$/\1 \2/g'); do
   handle_attr ${attr}
 done
+
+requirements=""
+for line in $(rpmspec --parse ${specfile} | grep '^Requires' | \
+              grep -v 'ceph\|rados\|rbd\|rgw'); do
+
+  req=$(echo $line | sed -n 's/^Requires:[ ]\+\(.*\)/\1/p')
+  requirements="$requirements $req"
+done
+
+echo "zypper install -y $requirements"
