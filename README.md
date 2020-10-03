@@ -214,6 +214,14 @@ buildah's working containers still being around.
 miserably. Additionally, seems it might need quite a lot of space for the
 humongous images.
 
+* as of Oct 3, 2020, we have a slight snafu where incremental images are broken
+  due to permissions on the base image. The current, looked after solution is to
+  maintain two kinds of images (`raw` and `final`), one which will be the
+  incremental image and the other the final incremental image; the difference
+  will be that the `final` image will have adjusted permissions, users, and all
+  that, while the other will simply maintain an incremental copy of the
+  binaries.
+
 
 setting up a local registry
 ===========================
