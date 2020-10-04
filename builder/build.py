@@ -426,10 +426,17 @@ class Build:
 		assert mnt_path
 		assert mnt_path.is_dir()
 
+		exclude_dirs = [
+			"usr/share/ceph/mgr/dashboard/frontend/node_modules",
+			"usr/share/ceph/mgr/dashboard/frontend/src"
+		]
+
+		excludes = ' '.join([f'--exclude {x}' for x in exclude_dirs])
+
 		# transfer binaries.
 		cmd = f"rsync --info=stats --update --recursive --links --perms "\
-			  f"--group --owner --times "\
-			  f"{str(install_path)}/ {str(mnt_path)}"
+			  f"--group --owner --times {excludes} "\
+			  f"{str(install_path)}/ {str(mnt_path)}"		
 		ret, _, stderr = self._run_cmd(cmd)
 		if ret != 0:
 			raise_build_error(ret, stderr)
