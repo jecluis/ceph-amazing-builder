@@ -210,21 +210,24 @@ class Containers:
 			imgs.append(ContainerImage(image_id, names, img_size, img_created))
 		return imgs
 
-	@classmethod
-	def find_build_image_latest(cls, name: str):
-		imgs: List[ContainerImage] = cls.find_build_images(name)
-		for image in imgs:
-			if image.has_tag('latest'):
-				return image
-		return None
 
 	@classmethod
-	def has_build_image(cls, name: str, tag="latest"):
+	def find_build_image_latest(cls, name: str) -> ContainerImage:
+		return cls.find_build_image(name, "latest")
+
+
+	@classmethod
+	def find_build_image(cls, name: str, tag="latest") -> ContainerImage:
 		imgs: List[ContainerImage] = cls.find_build_images(name)
 		for image in imgs:
 			if image.has_tag(tag):
-				return True
-		return False
+				return image
+		return None
+
+
+	@classmethod
+	def has_build_image(cls, name: str, tag="latest") -> bool:
+		return cls.find_build_image(name, tag) is not None
 		
 
 	@classmethod
