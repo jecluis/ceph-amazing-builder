@@ -2,6 +2,7 @@ import yaml
 from pathlib import Path
 from appdirs import user_config_dir
 from typing import Dict, Any, List
+from .utils import print_tree
 
 
 class UnknownBuildError(Exception):
@@ -17,8 +18,9 @@ class Config:
 
 	_ccache_dir: Path = None
 	_installs_dir: Path = None
-
 	_ccache_default_size: str = None
+	_registry_url: str = None
+	_registry_is_secure: bool = False
 
 	def __init__(self):
 		config_dir = user_config_dir('cab')
@@ -56,9 +58,17 @@ class Config:
 			installs_config = global_config['installs']
 			if 'path' in installs_config:
 				self._installs_dir = Path(installs_config['path'])
+		if 'registry' in global_config:
+			registry_config = global_config['registry']
+			if 'url' in registry_config:
+				self._registry_url = global_config['registry']['url']
+			if 'secure' in registry_config:
+				self._registry_is_secure = registry_config['secure']
 		
 		if not self._installs_dir:
 			return False
+
+		self.print()
 		return True
 
 
@@ -67,6 +77,12 @@ class Config:
 
 	def has_ccache(self):
 		return self.get_ccache_dir() is not None
+
+	def has_registry(self):
+		return self.get_registry() is not None
+
+	def is_registry_secure(self):
+		return self._registry_is_secure
 
 	def get_config_path(self) -> str:
 		return str(self._config_dir.joinpath('config.yaml'))
@@ -80,6 +96,9 @@ class Config:
 	def get_ccache_size(self) -> str:
 		return self._ccache_default_size
 
+	def get_registry(self) -> str:
+		return self._registry_url
+
 	def set_ccache_dir(self, ccache_str: str):
 		if not ccache_str:
 			self._ccache_dir = None
@@ -91,6 +110,10 @@ class Config:
 
 	def set_ccache_size(self, sz: str):
 		self._ccache_default_size = sz
+
+	def set_registry(self, registry: str, secure_registry: bool):
+		self._registry_url = registry
+		self._registry_is_secure = secure_registry
 
 	
 	def _write_config(self):
@@ -107,6 +130,11 @@ class Config:
 			d['global']['ccache'] = {
 				'path': str(self._ccache_dir),
 				'size': self._ccache_default_size
+			}
+		if self._registry_url:
+			d['global']['registry'] = {
+				'url': self._registry_url,
+				'secure': self._registry_is_secure
 			}
 		path = self._config_dir.joinpath(config_file)
 		self._write_config_file(d, path)
@@ -159,5 +187,16 @@ class Config:
 
 
 	def print(self):
-		print(f"  ccache directory: {self.get_ccache_dir()}")
-		print(f"installs directory: {self.get_installs_dir()}")
+		tree = [
+			('config', '', [
+				('installs directory', self.get_installs_dir()),
+				('ccache directory', self.get_ccache_dir(), [
+					('size', self.get_ccache_size())
+				]),
+				('registry', self._registry_url, [
+					('secure', self._registry_is_secure)
+				])
+			])
+		]
+		print_tree(tree)		
+		

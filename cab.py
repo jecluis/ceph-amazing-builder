@@ -9,6 +9,7 @@ import shutil
 import re
 from pathlib import Path
 from typing import Dict, Any, Tuple, Optional, List
+from http.client import HTTPConnection, HTTPException
 
 from builder.config import Config
 from builder.build import Build
@@ -61,7 +62,40 @@ def _prompt_ccache_size() -> str:
 		ccache_size = f"{size}{unit}"
 		break
 	return ccache_size
-		
+
+
+def _alive_registry_url(url: str) -> bool:
+	pinfo(f"Trying to reach registry at {url}...")
+	try:
+		conn = HTTPConnection(url, timeout=30)
+		conn.request("GET", "/v2/")
+	except Exception as e:
+		perror(f"error: {str(e)}")
+		return False
+	return True
+
+
+def _prompt_registry() -> Tuple[str, bool]:
+	registry_url: str = None
+	secure_registry: bool = None
+
+	while True:
+		registry_url = click.prompt(
+			sinfo("Registry URL"), type=str, default="localhost:5000")
+		if not _alive_registry_url(registry_url):
+			pwarn("Registry does not to seem to be alive.")
+			ignore = click.confirm(swarn("Continue anyway?"), default=False)
+			if ignore:
+				break
+			if click.confirm(
+				sinfo("Do you want to abort setting a URL?"), default=False):
+				return None, None
+			else:
+				continue
+		break
+
+	secure_registry = click.confirm(sinfo("Is registry secure?"), default=True)
+	return registry_url, secure_registry
 
 
 def _init_tree() -> Tuple[Path, Path]:
@@ -98,7 +132,11 @@ def init():
 
 		installs_path: Path = None
 		ccache_path: Path = None
-		create_tree = False
+		create_tree: bool = False
+		ccache_size: str = '10G'
+		registry_url: str = None
+		secure_registry: bool = None
+	
 		if predefined_tree:
 			installs_path, ccache_path = _init_tree()
 			create_tree = True
@@ -109,19 +147,23 @@ def init():
 				ccache_path = _prompt_directory("ccache directory")
 
 
-		ccache_size = '10G' # default
 		if ccache_path:
 			ccache_size = _prompt_ccache_size()
 			assert ccache_size
 
+		registry_url, secure_registry = _prompt_registry()
+		if registry_url is not None:
+			assert secure_registry is not None
 
 		tbl = [
 			("config path", config_path),
 			("installs directory", installs_path),
 			("ccache directory", ccache_path),
-			("ccache size", ccache_size)
+			("ccache size", ccache_size),
+			("registry url", registry_url),
+			("secure registry", secure_registry)
 		]
-		print_table(tbl, color="cyan")				
+		print_table(tbl, color="cyan")
 
 		if click.confirm(sokay("Is this okay?"), default=True):
 			break
@@ -133,6 +175,7 @@ def init():
 	config.set_ccache_dir(str(ccache_path))
 	config.set_installs_dir(str(installs_path))
 	config.set_ccache_size(ccache_size)
+	config.set_registry(registry_url, secure_registry)
 	config.commit()
 	pokay("configuration saved.")
 

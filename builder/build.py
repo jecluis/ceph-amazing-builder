@@ -8,8 +8,8 @@ import errno
 from pathlib import Path
 from datetime import datetime as dt
 from .config import Config, UnknownBuildError
-from .containers import Containers, ContainerImage
-from .utils import print_tree, print_table, pwarn, pinfo, pokay
+from .containers import Containers, ContainerImage, ContainerImageName
+from .utils import print_tree, print_table, pwarn, pinfo, pokay, perror
 from typing import Tuple, List
 
 
@@ -227,6 +227,8 @@ class Build:
 		if do_container:
 			if not self._build_container(install_path):
 				raise ContainerBuildError()
+			if self._config.has_registry():
+				self._push_to_registry()
 
 
 	def _perform_build(self, install_path: Path, ccache_path: Path,
@@ -485,3 +487,22 @@ class Build:
 			container_final_image, hashid[:12]
 		))
 		return container_final_image
+
+		
+	def _push_to_registry(self):
+
+		latest_img: ContainerImage = \
+			Containers.find_build_image_latest(self._name)
+		latest_name: ContainerImageName = latest_img.get_latest_image_name()
+		img_name = f"{latest_name._repo}/{latest_name.name}:{latest_name.tag}"
+		registry_url = self._config.get_registry()
+		extra = ""
+		if not self._config.is_registry_secure():
+			extra = "--tls-verify=false"
+
+		cmd = f"podman push {extra} {img_name} {registry_url}/{img_name}"
+		pinfo(f"=> pushing {img_name} to {registry_url}")
+		proc = subprocess.run(shlex.split(cmd),
+		                      stdout=sys.stdout, stderr=sys.stderr)
+		if proc.returncode != 0:
+			perror(f"error pushing to repository")

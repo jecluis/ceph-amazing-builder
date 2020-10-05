@@ -94,10 +94,17 @@ class ContainerImage:
 
 	
 	def get_latest_name(self) -> str:
+		name: ContainerImageName = self.get_latest_image_name()
+		if name:
+			return str(name)
+		return None
+
+
+	def get_latest_image_name(self) -> ContainerImageName:
 		name: ContainerImageName
 		for name in self._names:
 			if name.tag == "latest":
-				return str(name)
+				return name
 		return None
 
 
