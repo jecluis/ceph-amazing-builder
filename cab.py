@@ -6,7 +6,7 @@ import subprocess
 import shlex
 import re
 from pathlib import Path
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 from http.client import HTTPConnection
 
 from builder.config import Config
@@ -73,13 +73,14 @@ def _alive_registry_url(url: str) -> bool:
     return True
 
 
-def _prompt_registry() -> Tuple[str, bool]:
-    registry_url: str = None
-    secure_registry: bool = None
+def _prompt_registry() -> Tuple[Optional[str], Optional[bool]]:
+    registry_url: Optional[str] = None
+    secure_registry: bool = True
 
     while True:
         registry_url = click.prompt(
             sinfo("Registry URL"), type=str, default="localhost:5000")
+        assert registry_url is not None
         if not _alive_registry_url(registry_url):
             pwarn("Registry does not to seem to be alive.")
             ignore = click.confirm(swarn("Continue anyway?"), default=False)

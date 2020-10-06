@@ -58,7 +58,7 @@ class ContainerImage:
     _created: dt
 
     def __init__(self, hashid: str,
-                 names: List[ContainerImageName], size: int, created: dt):
+                 names: List[ContainerImageName], size: float, created: dt):
         self._hashid: str = hashid[:12]
         self._names: List[ContainerImageName] = names
         self._tags: List[str] = self._get_tags()
@@ -92,13 +92,13 @@ class ContainerImage:
     def __str__(self) -> str:
         return f"{self._hashid} {self._names}"
 
-    def get_latest_name(self) -> str:
-        name: ContainerImageName = self.get_latest_image_name()
+    def get_latest_name(self) -> Optional[str]:
+        name: Optional[ContainerImageName] = self.get_latest_image_name()
         if name:
             return str(name)
         return None
 
-    def get_latest_image_name(self) -> ContainerImageName:
+    def get_latest_image_name(self) -> Optional[ContainerImageName]:
         name: ContainerImageName
         for name in self._names:
             if name.tag == "latest":
@@ -106,7 +106,7 @@ class ContainerImage:
         return None
 
     @property
-    def size(self) -> int:
+    def size(self) -> float:
         return self._size
 
     def get_size_str(self) -> str:
@@ -117,7 +117,7 @@ class ContainerImage:
         return self._created
 
     @property
-    def names(self) -> List[str]:
+    def names(self) -> List[ContainerImageName]:
         return self._names
 
     @property
@@ -134,7 +134,7 @@ class Containers:
         pass
 
     @classmethod
-    def parse_image_name(cls, namestr: str) -> ContainerImageName:
+    def parse_image_name(cls, namestr: str) -> Optional[ContainerImageName]:
         if not namestr or len(namestr) == 0:
             return None
 
@@ -162,6 +162,7 @@ class Containers:
         for img in images_dict:
             for n in img['Names']:
                 img_name = cls.parse_image_name(n)
+                assert img_name is not None
                 if img_name.name == vendor and img_name.tag == release:
                     return str(img_name)
         return None
@@ -200,6 +201,7 @@ class Containers:
             names: List[ContainerImageName] = []
             for n in image_entry['Names']:
                 img_name = cls.parse_image_name(n)
+                assert img_name is not None
                 if img_name.name != buildname:
                     # print(f"img does not match: ")
                     continue
@@ -210,11 +212,14 @@ class Containers:
         return imgs
 
     @classmethod
-    def find_build_image_latest(cls, name: str) -> ContainerImage:
+    def find_build_image_latest(cls, name: str) -> Optional[ContainerImage]:
         return cls.find_build_image(name, "latest")
 
     @classmethod
-    def find_build_image(cls, name: str, tag="latest") -> ContainerImage:
+    def find_build_image(cls,
+                         name: str,
+                         tag="latest"
+                         ) -> Optional[ContainerImage]:
         imgs: List[ContainerImage] = cls.find_build_images(name)
         for image in imgs:
             if image.has_tag(tag):
@@ -227,7 +232,7 @@ class Containers:
 
     @classmethod
     def run_shell(cls, name: str):
-        latest: ContainerImage = cls.find_build_image_latest(name)
+        latest: Optional[ContainerImage] = cls.find_build_image_latest(name)
         if not latest:
             return False
 
@@ -239,7 +244,7 @@ class Containers:
     def rm_image(cls, image: ContainerImage) -> bool:
         success = True
         click.secho(f"=> remove image id {image.hashid}", fg="yellow")
-        name: str
+        name: ContainerImageName
         cmd = "podman rmi {imgname}"
         for name in image.names:
             click.secho(f"  - remove {name}", fg="yellow")
@@ -260,7 +265,7 @@ class Containers:
 
     @classmethod
     def get_build_name_latest(cls, buildname: str):
-        img: ContainerImage = cls.find_build_image_latest(buildname)
+        img: Optional[ContainerImage] = cls.find_build_image_latest(buildname)
         if not img:
             return None
         return img.get_latest_name()

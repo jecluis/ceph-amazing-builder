@@ -1,7 +1,7 @@
 import os
 import errno
 from pathlib import Path
-from typing import List, Tuple, Any
+from typing import List, Tuple, Any, Optional
 from .utils import serror, run_cmd, pdebug
 
 
@@ -23,12 +23,12 @@ def raise_buildah_error(rc: int, msg: Any):
 
 class Buildah:
 
-    _from: str = None
-    _wc: str = None  # working container
-    _mount_path: Path = None
+    _from: str
+    _wc: str  # working container
+    _mount_path: Optional[Path] = None
     _committed: bool = False
-    _hashid: str = None
-    _name: str = None
+    _hashid: Optional[str] = None
+    _name: Optional[str] = None
 
     def __init__(self, _from: str):
         self._create_from(_from)

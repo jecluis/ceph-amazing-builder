@@ -108,8 +108,8 @@ def run_cmd(
     out = subprocess.PIPE
     err = subprocess.PIPE
     if not capture_output:
-        out = sys.stdout
-        err = sys.stderr
+        out = sys.stdout   # type: ignore
+        err = sys.stderr   # type: ignore
 
     proc = subprocess.run(shlex.split(cmd), stdout=out, stderr=err)
 

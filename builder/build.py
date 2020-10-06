@@ -6,7 +6,7 @@ import shutil
 import os
 from pathlib import Path
 from datetime import datetime as dt
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 from .config import Config, UnknownBuildError
 from .containers import Containers, ContainerImage, ContainerImageName
 from .utils import print_tree, print_table, pwarn, pinfo, pokay, perror
@@ -38,11 +38,11 @@ def raise_build_error(retcode: int, msg=None):
 
 class Build:
 
-    _config: Config = None
-    _name: str = None
-    _vendor: str = None
-    _release: str = None
-    _sources: str = None
+    _config: Config
+    _name: str
+    _vendor: Optional[str] = None
+    _release: Optional[str] = None
+    _sources: Optional[str] = None
 
     _with_debug: bool = False
     _with_tests: bool = False
@@ -103,7 +103,7 @@ class Build:
     def get_install_dir(self) -> str:
         return str(self.get_install_path())
 
-    def get_sources_dir(self) -> str:
+    def get_sources_dir(self) -> Optional[str]:
         return self._sources
 
     def print(self, with_prefix=False, verbose=False):
@@ -179,7 +179,7 @@ class Build:
         # nuke an existing build install directory; force reinstall.
         if nuke_install:
             install_path: Path = \
-                config.get_builds_dir().joinpath(build._name)
+                config.get_installs_dir().joinpath(build._name)
             click.secho(
                 f"=> removing install path at {install_path}", fg="yellow")
             if install_path.exists():
@@ -255,6 +255,8 @@ class Build:
         ]
         print_table(tbl, color="cyan")
 
+        assert self._vendor
+        assert self._release
         build_image = \
             Containers.find_base_build_image(self._vendor, self._release)
         if not build_image:
@@ -333,7 +335,9 @@ class Build:
             absense, a release image.
         """
 
-        base_image: str = None
+        assert self._vendor
+        assert self._release
+        base_image: Optional[str] = None
         if not Containers.has_build_image(self._name, "latest-raw"):
             base_image, _ = Containers.find_release_base_image(
                 self._vendor, self._release)

@@ -1,7 +1,7 @@
 import yaml
 from pathlib import Path
-from appdirs import user_config_dir
-from typing import Dict, Any, List
+from appdirs import user_config_dir # type: ignore
+from typing import Dict, Any, List, Optional
 from .utils import print_tree
 
 
@@ -12,14 +12,14 @@ class UnknownBuildError(Exception):
 
 class Config:
 
-    _config_dir: Path = None
-    _build_config_dir: Path = None
+    _config_dir: Path
+    _build_config_dir: Path
     _has_config: bool = False
 
-    _ccache_dir: Path = None
-    _installs_dir: Path = None
-    _ccache_default_size: str = None
-    _registry_url: str = None
+    _ccache_dir: Optional[Path] = None
+    _installs_dir: Optional[Path] = None
+    _ccache_default_size: str
+    _registry_url: Optional[str] = None
     _registry_is_secure: bool = False
 
     def __init__(self):
@@ -84,16 +84,17 @@ class Config:
     def get_config_path(self) -> str:
         return str(self._config_dir.joinpath('config.yaml'))
 
-    def get_ccache_dir(self) -> Path:
+    def get_ccache_dir(self) -> Optional[Path]:
         return self._ccache_dir
 
     def get_installs_dir(self) -> Path:
+        assert self._installs_dir is not None
         return self._installs_dir
 
     def get_ccache_size(self) -> str:
         return self._ccache_default_size
 
-    def get_registry(self) -> str:
+    def get_registry(self) -> Optional[str]:
         return self._registry_url
 
     def set_ccache_dir(self, ccache_str: str):
