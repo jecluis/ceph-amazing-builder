@@ -2,6 +2,7 @@ import click
 import shlex
 import subprocess
 import sys
+import os
 from typing import List, Any, Tuple
 
 
@@ -121,3 +122,16 @@ def run_cmd(
         if proc.stderr:
             stderr = proc.stderr.decode("utf-8").splitlines()
     return proc.returncode, stdout, stderr
+
+
+class CABError(Exception):
+    def __init__(self, rc: int, msg: Any):
+        _err: str = os.strerror(rc)
+        _msg: str = ""
+        if isinstance(msg, list):
+            _msg = '\n'.join(msg)
+        elif isinstance(msg, str):
+            _msg = msg
+        if _msg and len(_msg) > 0:
+            _err += f": {_msg}"
+        super().__init__(serror(_err))

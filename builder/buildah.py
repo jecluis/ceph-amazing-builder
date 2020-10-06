@@ -1,24 +1,16 @@
-import os
 import errno
 from pathlib import Path
 from typing import List, Tuple, Any, Optional
-from .utils import serror, run_cmd, pdebug
+from .utils import run_cmd, pdebug, CABError
 
 
-class BuildahError(Exception):
-    pass
+class BuildahError(CABError):
+    def __init__(self, rc: int, msg: str):
+        super().__init__(rc, msg)
 
 
-def raise_buildah_error(rc: int, msg: Any):
-    _err: str = os.strerror(rc)
-    _msg: str = ""
-    if isinstance(msg, list):
-        _msg = '\n'.join(msg)
-    elif isinstance(msg, str):
-        _msg = msg
-    if len(_msg) > 0:
-        _err += f": {_msg}"
-    raise BuildahError(serror(_err))
+def raise_buildah_error(rc: int, msg: Any) -> None:
+    raise BuildahError(rc, msg)
 
 
 class Buildah:
