@@ -1,5 +1,8 @@
 import click
-from typing import List, Any
+import shlex
+import subprocess
+import sys
+from typing import List, Any, Tuple
 
 def serror(what: str):
 	return click.style(what, fg="red")
@@ -13,6 +16,9 @@ def sokay(what: str):
 def sinfo(what: str):
 	return click.style(what, fg="cyan")
 
+def sdebug(what: str):
+	return click.style(what, fg="white", bold=True)
+
 def perror(what: str):
 	print(serror(what))
 
@@ -24,6 +30,9 @@ def pokay(what: str):
 
 def pinfo(what: str):
 	print(sinfo(what))
+
+def pdebug(what: str):
+	print(sdebug(what))
 
 
 def _print_tree_item(
@@ -70,3 +79,35 @@ def print_table(table: List[Any], color=None):
 	
 	for k, v in table:
 		_print_table_item(max_len, k, v, color)
+
+
+def run_cmd(
+    cmd: str,
+    capture_output: bool = True
+) -> Tuple[int, List[str], List[str]]:
+	""" Run command
+
+		Returns a tuple with:
+		 * the command's return code;
+		 * list of lines from stdout;
+		 * list of lines from stderr;
+
+		both stdout and stderr will be empty lists if 'capture_output' is
+		set to false.
+	"""
+	out = subprocess.PIPE
+	err = subprocess.PIPE
+	if not capture_output:
+		out = sys.stdout
+		err = sys.stderr
+	
+	proc = subprocess.run(shlex.split(cmd), stdout=out, stderr=err)
+
+	stdout = []
+	stderr = []
+	if capture_output:
+		if proc.stdout:
+			stdout = proc.stdout.decode("utf-8").splitlines()
+		if proc.stderr:
+			stderr = proc.stderr.decode("utf-8").splitlines()
+	return proc.returncode, stdout, stderr

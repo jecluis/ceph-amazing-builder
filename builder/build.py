@@ -7,10 +7,11 @@ import os
 import errno
 from pathlib import Path
 from datetime import datetime as dt
+from typing import Tuple, List
 from .config import Config, UnknownBuildError
 from .containers import Containers, ContainerImage, ContainerImageName
 from .utils import print_tree, print_table, pwarn, pinfo, pokay, perror
-from typing import Tuple, List
+from .buildah import Buildah
 
 
 def cprint(prefix: str, suffix: str):
@@ -313,65 +314,6 @@ class Build:
 		return proc.returncode, stdout, stderr
 
 
-	def _run_buildah(self, cmd: str) -> Tuple[int, str]:
-		buildah_cmd = 'buildah unshare buildah {}'.format(cmd)		
-		ret, stdout, stderr = self._run_cmd(buildah_cmd)
-		if ret != 0:
-			click.secho(
-			    "error running buildah {}: {}".format(cmd, stderr), fg="red")
-			return ret, stderr
-		return ret, stdout
-
-
-	def _buildah_from(self, image_name: str) -> str:
-		ret, result = self._run_buildah(f"from {image_name}")
-		if ret != 0:
-			raise_build_error(ret, "unable to create working container")
-		working_container = result.splitlines()[0]
-		if not working_container or len(working_container) == 0:
-			raise_build_error(errno.ENOENT, "no working container id returned")
-		return working_container
-
-	
-	def _buildah_mount(self, working_container: str) -> Path:
-		ret, result = self._run_buildah(f"mount {working_container}")
-		if ret != 0:
-			raise_build_error(ret, "unable to mount working container")
-		path_str = result.splitlines()[0]		
-		if not path_str or len(path_str) == 0:
-			raise raise_build_error(errno.ENOENT, "no mount point returned")
-
-		mnt_path = Path(path_str)
-		if not mnt_path.exists():
-			raise_build_error(errno.ENOENT, "mount path does not exist")
-		assert mnt_path.is_dir()
-		return mnt_path
-
-	
-	def _buildah_unmount(self, working_container: str):
-		ret, _ = self._run_buildah(f"unmount {working_container}")
-		if ret != 0:
-			raise_build_error(ret, "unable to unmount working container")
-
-
-	def _buildah_commit(self, working_container: str, name: str) -> str:
-		cmd = f"commit {working_container} {name}"
-		ret, result = self._run_buildah(cmd)
-		if ret != 0:
-			raise_build_error(ret, result)
-		hashid = result.splitlines()[0]
-		assert hashid and len(hashid) > 0
-		return hashid
-
-
-	def _buildah_tag(self, imageid: str, tag: str):
-		imgname = Containers.get_build_name(self._name)
-		cmd = f"tag {imageid} {imgname}:{tag}"
-		ret, result = self._run_buildah(cmd)
-		if ret != 0:
-			raise_build_error(ret, result)
-
-
 	def _build_container(self,
 	                     install_path: Path
 	) -> bool:
@@ -420,11 +362,10 @@ class Build:
 
 		# create working container (this is where our binaries will end up at).
 		#
-		working_container = self._buildah_from(base_image)
-		assert working_container and len(working_container) > 0
+		working_container: Buildah = Buildah(base_image)
 
 		# mount our working container, so we can transfer our binaries.
-		mnt_path = self._buildah_mount(working_container)
+		mnt_path: Path = working_container.mount()
 		assert mnt_path
 		assert mnt_path.is_dir()
 
@@ -443,25 +384,28 @@ class Build:
 		if ret != 0:
 			raise_build_error(ret, stderr)
 		
-		self._buildah_unmount(working_container)
+		working_container.unmount()
 
 		image_date = dt.now().strftime("%Y%m%dT%H%M%SZ")
 		container_image_name = Containers.get_build_name(self._name)
 		container_raw_image = f"{container_image_name}:{image_date}-raw"
 
-		hashid = self._buildah_commit(working_container, container_raw_image)
-		self._buildah_tag(hashid, "latest-raw")
+		hashid: str = \
+			working_container.commit(container_image_name, f"{image_date}-raw")
+		assert working_container.is_committed()
+		working_container.tag("latest-raw")
 		pokay("=> created raw image {} ({})".format(
 			container_raw_image, hashid[:12]))
 		return image_date, container_raw_image
 
 
 	def _build_final_container_image(self, datestr: str, raw_image: str) -> str:
-		working_container = self._buildah_from(raw_image)
-		assert working_container and len(working_container) > 0
+		# working_container = self._buildah_from(raw_image)
+		# assert working_container and len(working_container) > 0
+		working_container: Buildah = Buildah(raw_image)
 		
 		pinfo(f"=> creating final image from {raw_image}")
-		mnt_path = self._buildah_mount(working_container)
+		mnt_path: Path = working_container.mount()
 		assert mnt_path
 		assert mnt_path.is_dir()
 
@@ -469,20 +413,21 @@ class Build:
 		#  if present, will set permissions, create users and directories, etc.
 		post_install_path = mnt_path.joinpath('post-install.sh')
 		if post_install_path.exists():
-			cmd = f"run {working_container} bash -x /post-install.sh"
-			ret, result = self._run_buildah(cmd)
+			ret, result = working_container.run("bash -x /post-install.sh")
 			if ret != 0:
 				raise_build_error(ret, result)
 			post_install_path.unlink()
 
-		self._buildah_unmount(working_container)
+		working_container.unmount()
 
 		container_build_image_name = Containers.get_build_name(self._name)
 		container_final_image = f"{container_build_image_name}:{datestr}"
 
-		hashid = self._buildah_commit(working_container, container_final_image)
+		hashid: str = \
+			working_container.commit(container_build_image_name, datestr)
 		assert hashid and len(hashid) > 0
-		self._buildah_tag(hashid, "latest")
+		assert working_container.is_committed()
+		working_container.tag("latest")
 		pokay("=> created container image {} ({})".format(
 			container_final_image, hashid[:12]
 		))
