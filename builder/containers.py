@@ -1,16 +1,15 @@
 import click
-import subprocess
-import shlex
 import json
 import re
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict, Any, TypeVar
 from datetime import datetime as dt
+from .utils import run_cmd, CABError, pwarn, perror
 
 
 # from
 #  https://stackoverflow.com/questions/1094841/reusable-library-to-get-human-readable-version-of-file-size
 # because I'm lazy.
-def sizeof_fmt(num, suffix='B'):
+def sizeof_fmt(num, suffix='B') -> str:
     for unit in ['', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi', 'Ei', 'Zi']:
         if abs(num) < 1024.0:
             return "%3.1f%s%s" % (num, unit, suffix)
@@ -21,8 +20,23 @@ def sizeof_fmt(num, suffix='B'):
 def parse_datetime(datestr: str) -> dt:
     # podman returns timestamps that python has a hard time handling.
     # make it easier by discarding some precision.
-    ts = datestr.split('.')
-    return dt.fromisoformat(ts[0])
+    m = re.match(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}).*', datestr)
+    assert m is not None
+    assert len(m.groups()) > 0
+    assert len(m.group(1)) > 0
+    return dt.fromisoformat(m.group(1))
+
+
+class PodmanError(CABError):
+    def __init__(self, rc: int, msg: str):
+        super().__init__(rc, msg)
+
+
+def raise_podman_error(rc: int, msg: Any) -> None:
+    raise PodmanError(rc, msg)
+
+
+T_CIN = TypeVar('T_CIN', bound='ContainerImageName')
 
 
 class ContainerImageName:
@@ -31,22 +45,44 @@ class ContainerImageName:
     _name: str
     _tag: str
 
-    def __init__(self, remote, repo, name, tag):
+    def __init__(self, remote: str, repo: str, name: str, tag: str):
         self._remote = remote
         self._repo = repo
         self._name = name
         self._tag = tag
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self._name
 
     @property
-    def tag(self):
+    def tag(self) -> str:
         return self._tag
 
-    def __str__(self):
+    @property
+    def repository(self) -> str:
+        return self._repo
+
+    def __str__(self) -> str:
         return f"{self._remote}/{self._repo}/{self._name}:{self._tag}"
+
+    @classmethod
+    def parse(cls: T_CIN, namestr: str) -> Optional[T_CIN]:
+        if not namestr or len(namestr) == 0:
+            return None
+
+        matchstr = r"^([-._\d\w]+)/(.*)/([-_\d\w]+):([-_\d\w]+)$"
+        match = re.match(matchstr, namestr)
+        if not match:
+            return None
+        if len(match.groups()) < 4:
+            return None
+
+        remote: str = match.group(1)
+        repo: str = match.group(2)
+        img_name: str = match.group(3)
+        tag: str = match.group(4)
+        return cls(remote, repo, img_name, tag)
 
 
 class ContainerImage:
@@ -59,13 +95,13 @@ class ContainerImage:
 
     def __init__(self, hashid: str,
                  names: List[ContainerImageName], size: float, created: dt):
-        self._hashid: str = hashid[:12]
+        self._hashid: str = hashid
         self._names: List[ContainerImageName] = names
         self._tags: List[str] = self._get_tags()
         self._size: float = size
         self._created: dt = created
 
-    def _get_tags(self):
+    def _get_tags(self) -> List[str]:
         tags: List[str] = []
         name: ContainerImageName
         for name in self._names:
@@ -75,7 +111,7 @@ class ContainerImage:
     def has_tag(self, tag: str) -> bool:
         return tag in self._tags
 
-    def print(self):
+    def print(self) -> None:
         latest: str = ""
         if 'latest' in self._tags:
             latest = click.style("(latest)", fg="yellow")
@@ -124,47 +160,93 @@ class ContainerImage:
     def hashid(self) -> str:
         return self._hashid
 
+    @property
+    def short_hashid(self) -> str:
+        return self._hashid[:12]
+
+
+class Podman:
+
+    @classmethod
+    def _run(cls,
+             _cmd: str,
+             capture_output: bool = True
+             ) -> Tuple[int, List[str]]:
+        cmd = f"podman {_cmd}"
+        ret, stdout, stderr = run_cmd(cmd, capture_output=capture_output)
+        if ret != 0:
+            return ret, stderr
+        return ret, stdout
+
+    @classmethod
+    def get_images_raw(cls, name: Optional[str] = None) -> List[Any]:
+        cmd = "images --format json"
+        if name:
+            cmd += f" {name}"
+        ret, result = cls._run(cmd)
+        if ret != 0:
+            raise_podman_error(ret, result)
+        return json.loads('\n'.join(result))
+
+    @classmethod
+    def get_images(cls, _filter: Optional[str] = None) -> List[ContainerImage]:
+        cmd = "images --format json"
+        if _filter:
+            cmd += f" {_filter}"
+        ret, result = cls._run(cmd)
+        if ret != 0:
+            raise_podman_error(ret, result)
+
+        images_lst: List[Dict[Any, Any]] = json.loads('\n'.join(result))
+        images: List[ContainerImage] = []
+        obtained_images: List[str] = []
+        for entry in images_lst:
+            hashid: str = entry['Id']
+            created: dt = parse_datetime(entry['CreatedAt'])
+            size: int = entry['Size']
+            if hashid in obtained_images:
+                continue
+            names: List[str] = []
+            name: str
+            for name in entry['Names']:
+                n = ContainerImageName.parse(name)
+                if n is None:
+                    continue  # not one of our images, probably.
+                names.append(n)
+            images.append(ContainerImage(hashid, names, size, created))
+
+        return images
+
+    @classmethod
+    def run(cls,
+            image: str,
+            cmd: str,
+            capture_output: bool = True,
+            interactive: bool = False) -> Tuple[int, List[str]]:
+        _cmd: str = "run {it} {image} {cmd}"
+        it: str = "-it" if interactive else ""
+        return cls._run(_cmd.format(it=it, image=image, cmd=cmd),
+                        capture_output=capture_output)
+
+    @classmethod
+    def remove_image(cls, image: str) -> Tuple[int, List[str]]:
+        return cls._run(f"rmi {image}", capture_output=True)
+
 
 class Containers:
     def __init__(self):
         pass
 
     @classmethod
-    def _exists(cls, type: str, vendor: str, release: str):
-        pass
-
-    @classmethod
-    def parse_image_name(cls, namestr: str) -> Optional[ContainerImageName]:
-        if not namestr or len(namestr) == 0:
-            return None
-
-        matchstr = r"^([.-_\d\w]+)/(.*)/([-_\d\w]+):([-_\d\w]+)$"
-        match = re.match(matchstr, namestr)
-        if not match:
-            return None
-        if len(match.groups()) < 4:
-            return None
-
-        remote = match.group(1)
-        repo = match.group(2)
-        img_name = match.group(3)
-        tag = match.group(4)
-        return ContainerImageName(remote, repo, img_name, tag)
-
-    @classmethod
     def find_base_build_image(cls, vendor: str, release: str) -> Optional[str]:
-        cmd = f"podman images --format json cab/build/{vendor}:{release}"
-        proc = subprocess.run(shlex.split(cmd), stdout=subprocess.PIPE)
-        if proc.returncode != 0:
-            return None
-        # check name matches
-        images_dict = json.loads(proc.stdout)
-        for img in images_dict:
-            for n in img['Names']:
-                img_name = cls.parse_image_name(n)
-                assert img_name is not None
-                if img_name.name == vendor and img_name.tag == release:
-                    return str(img_name)
+        images_lst: List[ContainerImage] = \
+            Podman.get_images(f"cab/build/{vendor}:{release}")
+
+        image: ContainerImage
+        for image in images_lst:
+            for name in image.names:
+                if name.name == vendor and name.tag == release:
+                    return str(name)
         return None
 
     @classmethod
@@ -173,43 +255,39 @@ class Containers:
         vendor: str,
         release: str
     ) -> Tuple[Optional[str], Optional[str]]:
-        cmd = "podman images --format json"
-        proc = subprocess.run(shlex.split(cmd), stdout=subprocess.PIPE)
-        images_json = json.loads(proc.stdout)
-        for image_entry in images_json:
-            # print(image_entry['Names'])
-            image_id: str = image_entry['Id']
-            name: str
-            for name in image_entry['Names']:
-                if name.endswith(f'cab/base/release/{vendor}:{release}'):
-                    # print(f"found {name}")
-                    return name, image_id
+        images_lst: List[ContainerImage] = \
+            Podman.get_images(f"cab/base/release/{vendor}:{release}")
+
+        image: ContainerImage
+        for image in images_lst:
+            # get the first one matching, so we can get a hashid
+            name: ContainerImageName
+            for name in image.names:
+                if name.name == vendor and \
+                   name.tag == release and \
+                   name.repository == "cab/base/release":
+                    return str(name), image.hashid
         return None, None
 
     @classmethod
     def find_build_images(cls, buildname="") -> List[ContainerImage]:
-        cmd = f"podman images --format json cab-builds/{buildname}"
-        proc = subprocess.run(shlex.split(cmd), stdout=subprocess.PIPE)
-        images_dict = json.loads(proc.stdout)
-        got_imgs: List[str] = []
-        imgs: List[ContainerImage] = []
-        for image_entry in images_dict:
-            image_id: str = image_entry['Id']
-            if image_id in got_imgs:
-                continue
-            got_imgs.append(image_id)
-            names: List[ContainerImageName] = []
-            for n in image_entry['Names']:
-                img_name = cls.parse_image_name(n)
-                assert img_name is not None
-                if img_name.name != buildname:
-                    # print(f"img does not match: ")
+        images_lst: List[ContainerImage] = \
+            Podman.get_images(f"cab-builds/{buildname}")
+
+        hashids: List[str] = []
+        images: List[ContainerImage] = []
+        image: ContainerImage
+        for image in images_lst:
+            is_match: bool = False
+            for name in image.names:
+                if name.name != buildname:
                     continue
-                names.append(img_name)
-            img_created: dt = parse_datetime(image_entry['CreatedAt'])
-            img_size = image_entry['Size']
-            imgs.append(ContainerImage(image_id, names, img_size, img_created))
-        return imgs
+                is_match = True
+                break
+            if is_match and image.hashid not in hashids:
+                hashids.append(image.hashid)
+                images.append(image)
+        return images
 
     @classmethod
     def find_build_image_latest(cls, name: str) -> Optional[ContainerImage]:
@@ -231,40 +309,35 @@ class Containers:
         return cls.find_build_image(name, tag) is not None
 
     @classmethod
-    def run_shell(cls, name: str):
+    def run_shell(cls, name: str) -> bool:
         latest: Optional[ContainerImage] = cls.find_build_image_latest(name)
         if not latest:
             return False
-
-        cmd = f"podman run -it {latest._hashid} /bin/bash"
-        subprocess.run(shlex.split(cmd))
+        Podman.run(latest.hashid, "/bin/bash",
+                   interactive=True, capture_output=False)
         return True
 
     @classmethod
     def rm_image(cls, image: ContainerImage) -> bool:
         success = True
-        click.secho(f"=> remove image id {image.hashid}", fg="yellow")
+        pwarn(f"=> remove image id {image.hashid}")
         name: ContainerImageName
-        cmd = "podman rmi {imgname}"
         for name in image.names:
-            click.secho(f"  - remove {name}", fg="yellow")
-            cmdlst = shlex.split(cmd.format(imgname=name))
-            proc = subprocess.run(cmdlst,
-                                  stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE)
-            if proc.returncode != 0:
-                click.secho(f"error removing container image {name}", fg="red")
-                click.secho(proc.stderr.decode("utf-8"), fg="red")
+            pwarn(f"  - remove {name}")
+            ret, result = Podman.remove_image(str(name))
+            if ret != 0:
+                perror(f"error removing container image {name}")
+                perror('\n'.join(result))
                 success = False
                 continue
         return success
 
     @classmethod
-    def get_build_name(cls, buildname: str):
+    def get_build_name(cls, buildname: str) -> str:
         return f"cab-builds/{buildname}"
 
     @classmethod
-    def get_build_name_latest(cls, buildname: str):
+    def get_build_name_latest(cls, buildname: str) -> Optional[str]:
         img: Optional[ContainerImage] = cls.find_build_image_latest(buildname)
         if not img:
             return None
