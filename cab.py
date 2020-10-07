@@ -62,7 +62,7 @@ def _prompt_ccache_size() -> str:
     return ccache_size
 
 
-def _alive_registry_url(url: str) -> bool:
+def _is_alive_registry_url(url: str) -> bool:
     pinfo(f"Trying to reach registry at {url}...")
     try:
         conn = HTTPConnection(url, timeout=30)
@@ -81,7 +81,7 @@ def _prompt_registry() -> Tuple[Optional[str], Optional[bool]]:
         registry_url = click.prompt(
             sinfo("Registry URL"), type=str, default="localhost:5000")
         assert registry_url is not None
-        if not _alive_registry_url(registry_url):
+        if not _is_alive_registry_url(registry_url):
             pwarn("Registry does not to seem to be alive.")
             ignore = click.confirm(swarn("Continue anyway?"), default=False)
             if ignore:
