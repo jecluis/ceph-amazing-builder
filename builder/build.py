@@ -8,9 +8,10 @@ from pathlib import Path
 from datetime import datetime as dt
 from typing import Tuple, List, Optional
 from .config import Config, UnknownBuildError
-from .containers import Containers, ContainerImage, ContainerImageName
 from .utils import print_tree, print_table, pwarn, pinfo, pokay, perror
 from .buildah import Buildah
+from .container_image import ContainerImage, ContainerImageName
+from .images import Images
 
 
 def cprint(prefix: str, suffix: str):
@@ -134,10 +135,10 @@ class Build:
         return True
 
     def _remove_containers(self) -> bool:
-        imgs: List[ContainerImage] = Containers.find_build_images(self._name)
+        imgs: List[ContainerImage] = Images.find_build_images(self._name)
         imgs = sorted(imgs, key=lambda img: img._created, reverse=True)
         for img in imgs:
-            if not Containers.rm_image(img):
+            if not Images.rm_image(img):
                 return False
         return True
 
@@ -258,7 +259,7 @@ class Build:
         assert self._vendor
         assert self._release
         build_image = \
-            Containers.find_base_build_image(self._vendor, self._release)
+            Images.find_base_build_image(self._vendor, self._release)
         if not build_image:
             raise BuildError("unable to find base build image")
 
@@ -338,13 +339,13 @@ class Build:
         assert self._vendor
         assert self._release
         base_image: Optional[str] = None
-        if not Containers.has_build_image(self._name, "latest-raw"):
-            base_image, _ = Containers.find_release_base_image(
+        if not Images.has_build_image(self._name, "latest-raw"):
+            base_image, _ = Images.find_release_base_image(
                 self._vendor, self._release)
             if not base_image:
                 raise NoAvailableImageError("missing release image")
         else:
-            build_name = Containers.get_build_name(self._name)
+            build_name = Images.get_build_name(self._name)
             base_image = f"{build_name}:latest-raw"
         assert base_image is not None
         assert len(base_image) > 0
@@ -378,7 +379,7 @@ class Build:
         working_container.unmount()
 
         image_date = dt.now().strftime("%Y%m%dT%H%M%SZ")
-        container_image_name = Containers.get_build_name(self._name)
+        container_image_name = Images.get_build_name(self._name)
         container_raw_image = f"{container_image_name}:{image_date}-raw"
 
         hashid: str = \
@@ -413,7 +414,7 @@ class Build:
 
         working_container.unmount()
 
-        container_build_image_name = Containers.get_build_name(self._name)
+        container_build_image_name = Images.get_build_name(self._name)
         container_final_image = f"{container_build_image_name}:{datestr}"
 
         hashid: str = \
@@ -429,7 +430,7 @@ class Build:
     def _push_to_registry(self):
 
         latest_img: ContainerImage = \
-            Containers.find_build_image_latest(self._name)
+            Images.find_build_image_latest(self._name)
         latest_name: ContainerImageName = latest_img.get_latest_image_name()
         img_name = f"{latest_name._repo}/{latest_name.name}:{latest_name.tag}"
         registry_url = self._config.get_registry()

@@ -12,11 +12,12 @@ from http.client import HTTPConnection
 
 from builder.config import Config
 from builder.build import Build
-from builder.containers import ContainerImage, Containers
 from builder.utils import print_table, \
     serror, sokay, swarn, sinfo, \
     pinfo, pokay, perror, pwarn
 from builder.buildah import Buildah
+from builder.images import Images
+from builder.container_image import ContainerImage
 
 
 config = Config()
@@ -24,6 +25,7 @@ config = Config()
 
 @click.group()
 def cli():
+    """Build containers from existing source trees, incrementally."""
     pass
 
 
@@ -255,7 +257,7 @@ def create(buildname: str, vendor: str, release: str, sourcedir: str,
     # check whether a build image for <vendor>:<release> exists
 
     do_build_image: bool = False
-    img, img_id = Containers.find_release_base_image(vendor, release)
+    img, img_id = Images.find_release_base_image(vendor, release)
     if not img or not img_id:
         if not build_base_image:
             perror(f"error: unable to find base image for vendor {vendor} "
@@ -396,23 +398,35 @@ def destroy(buildname: str):
         pinfo(f"destroyed build '{buildname}'")
 
 
-@click.command()
+@click.command(name="list")
 @click.option('-v', '--verbose', default=False, is_flag=True)
 def list_builds(verbose: bool):
+    """List all builds."""
+
     build_names: List[str] = config.get_builds()
     for buildname in build_names:
         build = Build(config, buildname)
         build.print(with_prefix=True, verbose=True)
 
 
-@click.command()
+@click.command(name="info")
 @click.argument('buildname', type=click.STRING)
-def list_build_images(buildname: str):
+def build_info(buildname: str):
+    """Show build information, including images.
+
+    Will show information about a given build, including its configuration and
+    existing images.
+
+    BUILDNAME   name of build to show info for.
+    """
     if not config.build_exists(buildname):
         perror(f"build '{buildname}' does not exist.")
         sys.exit(errno.ENOENT)
 
-    images: List[ContainerImage] = Containers.find_build_images(buildname)
+    build = Build(config, buildname)
+    build.print(with_prefix=True, verbose=True)
+
+    images: List[ContainerImage] = Images.find_build_images(buildname)
     if len(images) == 0:
         perror(f"no images for build '{buildname}'")
         sys.exit(0)
@@ -433,7 +447,7 @@ def shell(buildname: str):
         perror(f"build '{buildname}' does not exist.")
         sys.exit(errno.ENOENT)
 
-    if not Containers.run_shell(buildname):
+    if not Images.run_shell(buildname):
         perror(f"unable to run shell for build '{buildname}'")
         sys.exit(errno.EINVAL)
 
@@ -443,7 +457,7 @@ cli.add_command(create)
 cli.add_command(build)
 cli.add_command(destroy)
 cli.add_command(list_builds)
-cli.add_command(list_build_images)
+cli.add_command(build_info)
 cli.add_command(shell)
 
 
