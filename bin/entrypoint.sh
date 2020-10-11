@@ -47,41 +47,45 @@ if $do_with_ccache ; then
 fi
 export CEPH_EXTRA_CMAKE_ARGS="$extra_args"
 
-version=$(git describe --long --match 'v*' | sed 's/^v//')
-rpm_version=$(echo ${version} | cut -d'-' -f 1-1)
-rpm_release=$(echo ${version} | cut -d'-' -f 2- | sed 's/-/./')
 
-cat << EOF
-ceph version: ${version}
- rpm version: ${rpm_version}
- rpm release: ${rpm_release}
-EOF
+# generate a builder spec file, adjusted for our purposes.
+# this spec is slightly modified so we can build with ease, and parse
+# informations out of it at later stages.
+#
+/build/bin/generate-builder-spec.sh || exit 1
 
-# we do a bit of hacking on the spec file because we are not using it for its
-# intended purpose, but for (potentially) incremental builds, and definitely not
-# using the tarball.
-cat ceph.spec.in |
-  sed "s/@PROJECT_VERSION@/${rpm_version}/g" |
-  sed "s/@RPM_RELEASE@/${rpm_release}/g" |
-  sed "s/@TARBALL_BASENAME@/ceph-${version}/g" |
-  sed "s/mkdir build/mkdir build || true/g" |
-  sed "s/%fdupes %{buildroot}%{_prefix}//g" |
-  sed 's/%{buildroot}/\/build\/out/g' > ceph.spec.builder || \
-      exit 1
 
 git submodule sync || exit 1
 git submodule update --init --recursive || exit 1
 
 
+# parse build and install sections from our spec file.
+# We will use the resulting scripts instead of running commands ourselves.
+# This way we can ensure some sustainability across versions, as long as the
+# resulting output is still compatible. *fingers crossed*
+#
 parse_spec=/build/bin/parse-spec-section.sh
-
 ${parse_spec} ceph.spec.builder build > /build/src/cab-make.sh
 
+# there are a bunch of commands we need to perform after installing the sources,
+# and those live in the specfile's install section. However, we don't want to
+# install using the specfile's 'make' instruction -- we want to do that
+# ourselves. As such, parse what we need, but drop the make instruction.
+#
 ${parse_spec} ceph.spec.builder install |
   grep -v '.*make.*DESTDIR' > /build/out/post-make-install.sh
 
+# perform the build stage
+#
 bash ./cab-make.sh || exit 1
 rm ./cab-make.sh # we no longer need it
+
+# move on to the install stage.
+# This is customized, and based on the actual install stage described in the
+# spec file. We need to do it manually so we can adjust where we're installing,
+# and the target being installed. The spec file is not this flexible when it
+# comes to installing.
+#
 pushd build || exit 1
 
 nproc=$(nproc)
@@ -97,8 +101,15 @@ make ${build_args} DESTDIR=/build/out $install_type || exit 1
 
 popd
 
+# run all the post make install instructions. These will create needed files,
+# set given permissions, and install some files onto specific locations.
+#
 bash /build/out/post-make-install.sh || exit 1
 rm /build/out/post-make-install.sh
 
+# Generate a set of instructions that we need to run after installing the files
+# onto their final destination, in the final image. These would be run during
+# the preinstall phase of package installation.
+#
 /build/bin/parse-spec-post-install.sh \
     /build/src/ceph.spec.builder > /build/out/post-install.sh
