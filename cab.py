@@ -5,6 +5,7 @@ import sys
 import subprocess
 import shlex
 import re
+import os
 from pathlib import Path
 from typing import Tuple, List, Optional
 from http.client import HTTPConnection
@@ -15,6 +16,7 @@ from builder.containers import ContainerImage, Containers
 from builder.utils import print_table, \
     serror, sokay, swarn, sinfo, \
     pinfo, pokay, perror, pwarn
+from builder.buildah import Buildah
 
 
 config = Config()
@@ -179,6 +181,45 @@ def init():
     pokay("configuration saved.")
 
 
+def _build_base_image(vendor: str, release: str, sourcepath: Path) -> str:
+    pinfo(f"=> building base image for vendor {vendor} release {release}")
+
+    binpath = Path(os.path.dirname(os.path.realpath(__file__))).joinpath("bin")
+    assert binpath.exists()
+    assert binpath.is_dir()
+    assert binpath.joinpath("install-requirements.sh").exists()
+    print(f"binpath: {binpath}")
+    print(f"sourcepaht: {sourcepath}")
+
+    # assume base suse image exists for now
+    working_container = Buildah('cab/base/suse:leap-15.2')
+    # Assume that's me for now.
+    # We should make this configurable, or infer from something?
+    working_container.set_author("Joao Eduardo Luis", "joao@suse.com")
+    working_container.set_label("cab.ceph-vendor", vendor)
+    working_container.set_label("cab.cab-release", release)
+
+    working_container.run("mkdir -p /build/sources")
+    working_container.run("mkdir -p /build/bin")
+    working_container.config("--workingdir /build/sources")
+    working_container.run("/bin/bash ./install-deps.sh",
+                          volumes=[(str(sourcepath), "/build/sources")],
+                          capture_output=False)
+    working_container.run("/bin/bash /build/bin/install-requirements.sh",
+                          volumes=[
+                              (str(binpath), "/build/bin"),
+                              (str(sourcepath), "/build/sources")
+                          ], capture_output=False)
+    working_container.config("--workingdir /")
+    working_container.run("rm -fr /build")
+
+    image_name = f"cab/base/release/{vendor}"
+    image_name_tagged = f"{image_name}:{release}"
+    hashid = working_container.commit(image_name, release)
+    pinfo(f"=> container image {image_name_tagged} ({hashid[:12]})")
+    return hashid
+
+
 @click.command()
 @click.argument('buildname', type=click.STRING)
 @click.argument('vendor', type=click.STRING)
@@ -195,8 +236,10 @@ def init():
               help="git repository to clone from, into SOURCEDIR.")
 @click.option('--clone-from-branch', nargs=1, type=click.STRING,
               help="git branch to clone from.")
+@click.option('--build-base-image', default=False, is_flag=True,
+              help="build the base image if it does not exist.")
 def create(buildname: str, vendor: str, release: str, sourcedir: str,
-           with_debug: bool, with_tests: bool,
+           with_debug: bool, with_tests: bool, build_base_image: bool,
            clone_from_repo: str = None, clone_from_branch: str = None):
     """Create a new build; does not build.
 
@@ -211,13 +254,16 @@ def create(buildname: str, vendor: str, release: str, sourcedir: str,
 
     # check whether a build image for <vendor>:<release> exists
 
+    do_build_image: bool = False
     img, img_id = Containers.find_release_base_image(vendor, release)
     if not img or not img_id:
-        perror(
-            f"error: unable to find base image for vendor {vendor}"
-            f" release {release}")
-        perror("please run image-build.sh")
-        sys.exit(errno.ENOENT)
+        if not build_base_image:
+            perror(f"error: unable to find base image for vendor {vendor} "
+                   f"release {release}")
+            sys.exit(errno.ENOENT)
+        else:
+            pwarn("base image does not exist, building at a later stage")
+            do_build_image = True
 
     sourcepath: Path = Path(sourcedir).resolve()
 
@@ -257,6 +303,10 @@ def create(buildname: str, vendor: str, release: str, sourcedir: str,
     if not specfile.exists():
         perror("error: sourcedir is not a ceph git source tree")
         sys.exit(errno.EINVAL)
+
+    if do_build_image:
+        pinfo(f"=> building base image for vendor {vendor} release {release}")
+        _build_base_image(vendor, release, sourcepath)
 
     build = Build.create(config, buildname, vendor, release, sourcedir,
                          with_debug=with_debug, with_tests=with_tests)
