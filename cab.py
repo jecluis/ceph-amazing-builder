@@ -15,8 +15,7 @@ from builder.build import Build
 from builder.utils import print_table, \
     serror, sokay, swarn, sinfo, \
     pinfo, pokay, perror, pwarn
-from builder.buildah import Buildah
-from builder.images import Images
+from builder.images import Images, ImageChecker
 from builder.container_image import ContainerImage
 
 
@@ -183,43 +182,24 @@ def init():
     pokay("configuration saved.")
 
 
-def _build_base_image(vendor: str, release: str, sourcepath: Path) -> str:
-    pinfo(f"=> building base image for vendor {vendor} release {release}")
+def check_create_images(
+    vendor: str,
+    release: str,
+    sourcepath: Path
+) -> bool:
 
-    binpath = Path(os.path.dirname(os.path.realpath(__file__))).joinpath("bin")
+    ourdir: str = os.path.dirname(os.path.realpath(__file__))
+    binpath: Path = Path(ourdir).joinpath("bin")
     assert binpath.exists()
     assert binpath.is_dir()
-    assert binpath.joinpath("install-requirements.sh").exists()
-    print(f"binpath: {binpath}")
-    print(f"sourcepaht: {sourcepath}")
 
-    # assume base suse image exists for now
-    working_container = Buildah('cab/base/suse:leap-15.2')
-    # Assume that's me for now.
-    # We should make this configurable, or infer from something?
-    working_container.set_author("Joao Eduardo Luis", "joao@suse.com")
-    working_container.set_label("cab.ceph-vendor", vendor)
-    working_container.set_label("cab.cab-release", release)
+    if ImageChecker.check_has_images(vendor, release):
+        return True
 
-    working_container.run("mkdir -p /build/sources")
-    working_container.run("mkdir -p /build/bin")
-    working_container.config("--workingdir /build/sources")
-    working_container.run("/bin/bash ./install-deps.sh",
-                          volumes=[(str(sourcepath), "/build/sources")],
-                          capture_output=False)
-    working_container.run("/bin/bash /build/bin/install-requirements.sh",
-                          volumes=[
-                              (str(binpath), "/build/bin"),
-                              (str(sourcepath), "/build/sources")
-                          ], capture_output=False)
-    working_container.config("--workingdir /")
-    working_container.run("rm -fr /build")
+    if ImageChecker.check_create_images(vendor, release, sourcepath, binpath):
+        return True
 
-    image_name = f"cab/base/release/{vendor}"
-    image_name_tagged = f"{image_name}:{release}"
-    hashid = working_container.commit(image_name, release)
-    pinfo(f"=> container image {image_name_tagged} ({hashid[:12]})")
-    return hashid
+    return False
 
 
 @click.command()
@@ -257,15 +237,9 @@ def create(buildname: str, vendor: str, release: str, sourcedir: str,
     # check whether a build image for <vendor>:<release> exists
 
     do_build_image: bool = False
-    img, img_id = Images.find_release_base_image(vendor, release)
-    if not img or not img_id:
-        if not build_base_image:
-            perror(f"error: unable to find base image for vendor {vendor} "
-                   f"release {release}")
-            sys.exit(errno.ENOENT)
-        else:
-            pwarn("base image does not exist, building at a later stage")
-            do_build_image = True
+    if not ImageChecker.check_has_images(vendor, release):
+        pwarn("=> required images not found, building at a later stage")
+        do_build_image = True
 
     sourcepath: Path = Path(sourcedir).resolve()
 
@@ -307,8 +281,10 @@ def create(buildname: str, vendor: str, release: str, sourcedir: str,
         sys.exit(errno.EINVAL)
 
     if do_build_image:
-        pinfo(f"=> building base image for vendor {vendor} release {release}")
-        _build_base_image(vendor, release, sourcepath)
+        pinfo(f"=> building images for vendor {vendor} release {release}")
+        if not check_create_images(vendor, release, sourcepath):
+            perror("=> unable to create images; abort.")
+            sys.exit(errno.ENOTRECOVERABLE)
 
     build = Build.create(config, buildname, vendor, release, sourcedir,
                          with_debug=with_debug, with_tests=with_tests)
@@ -355,6 +331,20 @@ def build(
         )
         if not sure:
             sys.exit(1)
+
+    build: Build = Build(config, buildname)
+    assert build._vendor
+    assert build._release
+    assert build._sources
+    if not ImageChecker.check_has_images(build._vendor, build._release):
+        # create build images.
+        pwarn("=> missing build images; creating...")
+        vendor: str = build._vendor
+        release: str = build._release
+        sp: Path = Path(build._sources)
+        if not check_create_images(vendor, release, sp):
+            perror("=> error creating images for build")
+            sys.exit(errno.ENOTRECOVERABLE)
 
     Build.build(config, buildname, nuke_install=nuke_install,
                 with_fresh_build=with_fresh_build)

@@ -258,10 +258,11 @@ class Build:
 
         assert self._vendor
         assert self._release
-        build_image = \
-            Images.find_base_build_image(self._vendor, self._release)
-        if not build_image:
+        img: Optional[ContainerImage] = \
+            Images.find_builder_image(self._vendor, self._release)
+        if not img:
             raise BuildError("unable to find base build image")
+        build_image = img.get_real_name(self._vendor, self._release)
 
         bindir = Path.cwd().joinpath("bin")
         extra_args = []
@@ -340,10 +341,11 @@ class Build:
         assert self._release
         base_image: Optional[str] = None
         if not Images.has_build_image(self._name, "latest-raw"):
-            base_image, _ = Images.find_release_base_image(
+            img: Optional[ContainerImage] = Images.find_base_image(
                 self._vendor, self._release)
-            if not base_image:
+            if not img:
                 raise NoAvailableImageError("missing release image")
+            base_image = img.get_real_name(self._vendor, self._release)
         else:
             build_name = Images.get_build_name(self._name)
             base_image = f"{build_name}:latest-raw"

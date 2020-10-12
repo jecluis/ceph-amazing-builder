@@ -39,7 +39,7 @@ class ContainerImageName:
         if not namestr or len(namestr) == 0:
             return None
 
-        matchstr = r"^([-._\d\w]+)/(.*)/([-_\d\w]+):([-_\d\w]+)$"
+        matchstr = r"^([-._\d\w]+)/(.*)/([-_\d\w]+):([-._\d\w]+)$"
         match = re.match(matchstr, namestr)
         if not match:
             return None
@@ -107,6 +107,12 @@ class ContainerImage:
         for name in self._names:
             if name.tag == "latest":
                 return name
+        return None
+
+    def get_real_name(self, name: str, tag="latest") -> Optional[str]:
+        for n in self.names:
+            if n.name == name and n.tag == tag:
+                return str(n)
         return None
 
     @property
