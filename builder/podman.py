@@ -55,10 +55,10 @@ class Podman:
             size: int = entry['Size']
             if hashid in obtained_images:
                 continue
-            names: List[str] = []
+            names: List[ContainerImageName] = []
             name: str
             for name in entry['Names']:
-                n = ContainerImageName.parse(name)
+                n = ContainerImageName.parse(name)  # type: ignore
                 if n is None:
                     continue  # not one of our images, probably.
                 names.append(n)

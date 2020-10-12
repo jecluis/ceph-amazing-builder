@@ -35,7 +35,7 @@ class ContainerImageName:
         return f"{self._remote}/{self._repo}/{self._name}:{self._tag}"
 
     @classmethod
-    def parse(cls: T_CIN, namestr: str) -> Optional[T_CIN]:
+    def parse(cls, namestr: str) -> Optional[T_CIN]:
         if not namestr or len(namestr) == 0:
             return None
 
@@ -50,7 +50,7 @@ class ContainerImageName:
         repo: str = match.group(2)
         img_name: str = match.group(3)
         tag: str = match.group(4)
-        return cls(remote, repo, img_name, tag)
+        return ContainerImageName(remote, repo, img_name, tag)  # type: ignore
 
 
 class ContainerImage:

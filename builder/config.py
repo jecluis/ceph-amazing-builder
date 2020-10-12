@@ -1,6 +1,6 @@
 import yaml
 from pathlib import Path
-from appdirs import user_config_dir # type: ignore
+from appdirs import user_config_dir  # type: ignore
 from typing import Dict, Any, List, Optional
 from .utils import print_tree
 
@@ -66,7 +66,7 @@ class Config:
         if not self._installs_dir:
             return False
 
-        self.print()
+        # self.print()
         return True
 
     def has_config(self):
